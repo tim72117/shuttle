@@ -91,7 +91,7 @@ body {
   align-items: flex-end;
   justify-content: space-between;
   padding: 0 28px 6px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   flex: 0 0 auto;
 }
@@ -104,8 +104,14 @@ body {
   justify-content: space-between;
   padding: 0 8px;
   background: var(--ios-card);
-  border-bottom: 1px solid var(--ios-sep);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
   min-height: 52px;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+.navbar.navbar-hidden {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
 }
 .navbar .title {
   font-size: 16px;
@@ -124,7 +130,7 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 15px;
+  font-size: 17px;
 }
 .navbar .btn:disabled {
   color: var(--ios-gray);
@@ -215,11 +221,11 @@ body {
   min-width: 0;
 }
 .row .name {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 500;
 }
 .row .sub {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--ios-gray);
   white-space: nowrap;
   overflow: hidden;
@@ -236,13 +242,13 @@ body {
   justify-content: center;
   color: #fff;
   font-weight: 600;
-  font-size: 15px;
+  font-size: 17px;
   flex: 0 0 auto;
 }
 
 .section-title {
   padding: 18px 16px 6px;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--ios-gray);
   text-transform: uppercase;
 }
@@ -268,7 +274,7 @@ body {
   color: #fff;
 }
 .bubble .text {
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.35;
 }
 .bubble .meta {
@@ -279,7 +285,7 @@ body {
   align-items: center;
 }
 .tag {
-  font-size: 11px;
+  font-size: 12px;
   padding: 1px 7px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.06);
@@ -330,7 +336,7 @@ body {
   }
 }
 .cat {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   padding: 1px 7px;
   border-radius: 8px;
@@ -353,7 +359,7 @@ body {
   align-items: center;
   gap: 5px;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 15px;
   padding: 5px 12px;
   border: 1px solid var(--ios-sep);
   border-radius: 16px;
@@ -366,7 +372,7 @@ body {
   background: #f0f0f5;
 }
 .trip-count {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   min-width: 16px;
   text-align: center;
@@ -377,7 +383,7 @@ body {
 }
 .bubble .summary {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: 13px;
   opacity: 0.8;
   font-style: italic;
 }
@@ -420,7 +426,7 @@ body {
 .text.markdown table {
   border-collapse: collapse;
   margin: 6px 0;
-  font-size: 13px;
+  font-size: 15px;
 }
 .text.markdown th,
 .text.markdown td {
@@ -434,7 +440,7 @@ body {
 .text.markdown h1,
 .text.markdown h2,
 .text.markdown h3 {
-  font-size: 15px;
+  font-size: 17px;
   margin: 8px 0 4px;
 }
 .bubble.pending {
@@ -473,17 +479,17 @@ body {
   font-size: 16px;
 }
 .entry-item {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
   color: #1c1c1e;
 }
 .entry-when {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ios-blue);
   font-family: var(--mono);
 }
 .entry-loc {
-  font-size: 11px;
+  font-size: 12px;
   color: #8e8e93;
   margin-top: 2px;
 }
@@ -491,7 +497,7 @@ body {
 /* 成員權限標籤(可點切換 / 靜態顯示) */
 .role-chip {
   flex: 0 0 auto;
-  font-size: 12px;
+  font-size: 13px;
   padding: 4px 10px;
   border-radius: 12px;
   border: 1px solid var(--ios-sep);
@@ -515,6 +521,72 @@ body {
 }
 .role-chip.static {
   cursor: default;
+}
+
+/* 頻道列表：對齊 timeline 設計語言 */
+.ch-timeline {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+}
+.ch-tl-row {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  align-items: stretch;
+}
+.ch-tl-axis {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+.ch-tl-line {
+  width: 2px;
+  background: var(--ios-sep);
+  flex: 1;
+}
+.ch-tl-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ios-gray);
+  border: 2px solid var(--ios-card);
+  box-shadow: 0 0 0 2px var(--ios-sep);
+  flex: 0 0 auto;
+  z-index: 1;
+}
+.ch-tl-dot.mine {
+  background: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(196, 149, 106, 0.3);
+}
+.ch-tl-card {
+  margin: 0 0 10px 12px;
+  background: var(--ios-card);
+  border: 1px solid var(--ios-sep);
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.1s;
+}
+.ch-tl-card:active {
+  transform: scale(0.98);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.ch-tl-name {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-dark);
+  display: flex;
+  align-items: center;
+}
+.ch-tl-sub {
+  font-size: 13px;
+  color: var(--ios-gray);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 時間軸:左側軸線串圓點 + 右側 entry 卡(對齊 iOS TimelineView) */
@@ -549,7 +621,7 @@ body {
 }
 /* 月 */
 .tl-month-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ios-gray);
   font-family: var(--mono);
@@ -623,7 +695,7 @@ body {
   line-height: 1.2;
 }
 .tl-date-day {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--ios-blue);
   font-family: var(--mono);
@@ -729,7 +801,7 @@ body {
   align-items: center;
 }
 .tl-end-label {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--tl-trip-color);
   opacity: 0.8;
 }
@@ -775,7 +847,7 @@ body {
 .tl-main-title {
   font-weight: 600;
   color: #1c1c1e;
-  font-size: 14px;
+  font-size: 16px;
 }
 .tl-card-expand {
   display: grid;
@@ -796,7 +868,7 @@ body {
 .tl-expand-row {
   display: flex;
   gap: 8px;
-  font-size: 12px;
+  font-size: 13px;
   color: #3a3a3c;
 }
 .tl-expand-label {
@@ -804,7 +876,7 @@ body {
   flex: 0 0 32px;
 }
 .tl-expand-summary {
-  font-size: 12px;
+  font-size: 13px;
   color: #3a3a3c;
   line-height: 1.6;
   margin-bottom: 4px;
@@ -822,7 +894,7 @@ body {
   margin-bottom: 0;
 }
 .tl-item {
-  font-size: 14px;
+  font-size: 16px;
   color: #1c1c1e;
   display: flex;
   align-items: baseline;
@@ -830,7 +902,7 @@ body {
 }
 /* 事項旁的時刻(非全日事件) */
 .tl-time {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ios-blue);
   font-family: var(--mono);
@@ -843,7 +915,7 @@ body {
 }
 /* 事項旁的結束範圍(~ 結束時刻/日期) */
 .tl-span {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ios-blue);
   font-family: var(--mono);
@@ -851,21 +923,43 @@ body {
   opacity: 0.75;
 }
 
-/* 輸入列 */
+/* 對話區：相對定位容器，讓 composer 可以 absolute 貼底浮空 */
+.chat-area {
+  flex: 1 1 auto;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.chat-area .screen-body {
+  flex: 1 1 auto;
+  padding-bottom: 80px; /* 預留 composer 高度，最後一則訊息能完整滾出 */
+}
+
+/* 輸入列：浮空固定在對話區底部 */
 .composer {
-  flex: 0 0 auto;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px 16px;
+  padding: 10px 16px calc(16px + env(safe-area-inset-bottom, 0px));
   background: transparent;
+  pointer-events: none; /* 讓點擊穿透到下方內容，input/button 自己恢復 */
+}
+.composer input,
+.composer button {
+  pointer-events: auto;
 }
 .composer input {
   flex: 1;
   border: 1.5px solid var(--ios-sep);
   border-radius: 24px;
   padding: 11px 18px;
-  font-size: 15px;
+  font-size: 17px;
   outline: none;
   background: var(--ios-card);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
@@ -905,12 +999,12 @@ body {
   border-radius: 14px;
 }
 .answer-card .ans {
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.45;
 }
 .answer-card .cites {
   margin-top: 8px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ios-gray);
 }
 
@@ -923,14 +1017,14 @@ body {
 }
 .field label {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ios-gray);
   margin-bottom: 4px;
 }
 .field input {
   width: 100%;
   border: none;
-  font-size: 15px;
+  font-size: 17px;
   outline: none;
   font-family: var(--mono);
 }
@@ -939,14 +1033,14 @@ body {
   text-align: center;
   color: var(--ios-gray);
   padding: 40px 20px;
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .banner {
   margin: 10px 16px;
   padding: 10px 12px;
   border-radius: 10px;
-  font-size: 13px;
+  font-size: 15px;
   background: #fff3f2;
   color: var(--ios-red);
   border: 1px solid #ffd9d6;

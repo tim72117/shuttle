@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import ReactMarkdown from 'react-markdown'
 import {
-  MessageCircle, Settings, ChevronRight, ChevronLeft,
+  ChevronLeft,
   Users, Send, AlertCircle, Plus, LogIn,
 } from 'lucide-react'
 import type { ClientConfig, PresentedEntry } from './api'
@@ -19,7 +19,6 @@ const SS_TOKEN = 'channel.token'
 const SS_USER = 'channel.user'
 const SS_EMAIL = 'channel.email'
 
-type Tab = 'channels' | 'settings'
 
 // 聊天訊息(後端 Message + 前端專用欄位)。
 // presented:agent 用 present_entries 輸出、要在答案泡泡下用列表顯示的條目。
@@ -67,14 +66,13 @@ export function useAppState() {
     setEmail('')
   }, [])
 
-  const [tab, setTab] = useState<Tab>('channels')
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null)
 
   const cfg: ClientConfig = { baseURL, token }
   const effectiveUser = user ?? GUEST_USER
 
   return {
-    cfg, tab, setTab, activeChannel, setActiveChannel,
+    cfg, activeChannel, setActiveChannel,
     baseURL, setBaseURL, token, setToken,
     user: effectiveUser, email, isGuest: user == null,
     onAuthed, onLogout,
@@ -99,8 +97,6 @@ const ASSISTANT_ID = 'usr_assistant'
 
 export interface ContentProps {
   cfg: ClientConfig
-  tab: Tab
-  setTab: (t: Tab) => void
   activeChannel: Channel | null
   setActiveChannel: (c: Channel | null) => void
   baseURL: string
@@ -115,78 +111,48 @@ export interface ContentProps {
 }
 
 export function PhoneContent(props: ContentProps) {
-  const { cfg, tab, setTab, activeChannel, setActiveChannel } = props
+  const { cfg, activeChannel, setActiveChannel } = props
+  const [inSettings, setInSettings] = useState(false)
 
-  // 若在 channels tab 且選了頻道 → 顯示聊天頁(有返回)。
-  const inChat = tab === 'channels' && activeChannel
-
-  return (
-    <>
-      {inChat ? (
-        <ChatScreen
-          cfg={cfg}
-          channel={activeChannel}
-          user={props.user}
-          onBack={() => setActiveChannel(null)}
-        />
-      ) : (
-        <>
-          <TabScreen {...props} />
-          <TabBar tab={tab} setTab={setTab} />
-        </>
-      )}
-    </>
-  )
-}
-
-function TabScreen(props: ContentProps) {
-  switch (props.tab) {
-    case 'channels':
-      return (
-        <ChannelsScreen
-          cfg={props.cfg}
-          user={props.user}
-          isGuest={props.isGuest}
-          onAuthed={props.onAuthed}
-          onOpen={(c) => props.setActiveChannel(c)}
-        />
-      )
-    case 'settings':
-      return (
-        <SettingsScreen
-          cfg={props.cfg}
-          baseURL={props.baseURL}
-          setBaseURL={props.setBaseURL}
-          user={props.user}
-          email={props.email}
-          isGuest={props.isGuest}
-          onAuthed={props.onAuthed}
-          onLogout={props.onLogout}
-        />
-      )
+  if (activeChannel) {
+    return (
+      <ChatScreen
+        cfg={cfg}
+        channel={activeChannel}
+        user={props.user}
+        onBack={() => setActiveChannel(null)}
+      />
+    )
   }
-}
 
-function TabBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
-  const tabs: { key: Tab; Icon: React.ElementType; label: string }[] = [
-    { key: 'channels', Icon: MessageCircle, label: '頻道' },
-    { key: 'settings', Icon: Settings, label: '設定' },
-  ]
+  if (inSettings) {
+    return (
+      <SettingsScreen
+        cfg={props.cfg}
+        baseURL={props.baseURL}
+        setBaseURL={props.setBaseURL}
+        user={props.user}
+        email={props.email}
+        isGuest={props.isGuest}
+        onAuthed={props.onAuthed}
+        onLogout={() => { props.onLogout(); setInSettings(false) }}
+        onBack={() => setInSettings(false)}
+      />
+    )
+  }
+
   return (
-    <div className="tabbar">
-      {tabs.map((t) => (
-        <button
-          key={t.key}
-          className={`tab ${tab === t.key ? 'active' : ''}`}
-          onClick={() => setTab(t.key)}
-        >
-          <t.Icon size={22} strokeWidth={tab === t.key ? 2 : 1.5} />
-          <span>{t.label}</span>
-        </button>
-      ))}
-    </div>
+    <ChannelsScreen
+      cfg={props.cfg}
+      user={props.user}
+      isGuest={props.isGuest}
+      onAuthed={props.onAuthed}
+      onOpen={(c) => setActiveChannel(c)}
+      onOpenSettings={() => setInSettings(true)}
+    />
   )
 }
+
 
 // ---- 共用小元件 ----
 
@@ -225,12 +191,14 @@ function ChannelsScreen({
   isGuest,
   onAuthed,
   onOpen,
+  onOpenSettings,
 }: {
   cfg: ClientConfig
   user: User
   isGuest: boolean
   onAuthed: (token: string, user: User, email: string) => void
   onOpen: (c: Channel) => void
+  onOpenSettings: () => void
 }) {
   const [channels, setChannels] = useState<Channel[]>([])
   const [err, setErr] = useState<string | null>(null)
@@ -282,7 +250,9 @@ function ChannelsScreen({
               <LogIn size={18} strokeWidth={1.8} />
             </button>
           ) : (
-            <Avatar user={user} />
+            <button className="btn icon-btn" style={{ padding: 0 }} onClick={onOpenSettings} title="設定">
+              <Avatar user={user} />
+            </button>
           )}
         </div>
       </div>
@@ -324,21 +294,18 @@ function ChannelsScreen({
           <ul className="list">
             {channels.map((c) => (
               <li key={c.id} className="row" onClick={() => onOpen(c)}>
-                <Avatar user={{ name: c.name, avatarColor: '#007aff' }} />
+                <Avatar user={{ name: c.name, avatarColor: 'var(--color-accent)' }} />
                 <div className="grow">
                   <div className="name">
                     {c.name}
                     {c.ownerID === user.id && (
-                      <span className="cat" style={{ marginLeft: 6 }}>
-                        我的
-                      </span>
+                      <span className="cat" style={{ marginLeft: 6 }}>我的</span>
                     )}
                   </div>
                   <div className="sub">
                     {c.lastMessagePreview ?? '尚無訊息'} · {c.memberCount} 人
                   </div>
                 </div>
-                <ChevronRight size={16} strokeWidth={1.5} color="#c7c7cc" />
               </li>
             ))}
           </ul>
@@ -374,6 +341,26 @@ function ChatScreen({
   // 點選項目時顯示詳細資訊。
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const navbarRef = useRef<HTMLDivElement>(null)
+  const lastScrollY = useRef(0)
+
+  useEffect(() => {
+    const el = bodyRef.current
+    const nav = navbarRef.current
+    if (!el || !nav) return
+    const onScroll = () => {
+      const y = el.scrollTop
+      const diff = y - lastScrollY.current
+      lastScrollY.current = y
+      if (diff > 4) {
+        nav.classList.add('navbar-hidden')
+      } else if (diff < -4) {
+        nav.classList.remove('navbar-hidden')
+      }
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
 
   const load = useCallback(async () => {
     setErr(null)
@@ -552,7 +539,7 @@ function ChatScreen({
 
   return (
     <>
-      <div className="navbar">
+      <div className="navbar" ref={navbarRef}>
         <button className="btn icon-btn" onClick={onBack}>
           <ChevronLeft size={20} strokeWidth={1.8} />
         </button>
@@ -561,26 +548,27 @@ function ChatScreen({
           <Users size={18} strokeWidth={1.8} />
         </button>
       </div>
-      <div className="screen-body" ref={bodyRef}>
-        <ErrorBanner msg={err} />
-        {/* LLM 回答泡泡(記事後 agent 回應) */}
-        {messages.length > 0 && (
-          <div className="chat-list">
-            {messages.map((m) => (
-              <MessageBubble key={m.id} msg={m} meID={user.id} />
-            ))}
-          </div>
-        )}
-        {/* Timeline:直接顯示，不需點 chip */}
-        {entries.length === 0 && messages.length === 0 ? (
-          <div className="empty">
-            {isOwner ? '在下方輸入記事，會依時間排列在這裡。' : '在下方查詢頻道內容。'}
-          </div>
-        ) : entries.length > 0 ? (
-          <MultiTrackTimeline entries={entries} />
-        ) : null}
-      </div>
-      <div className="composer">
+      <div className="chat-area">
+        <div className="screen-body" ref={bodyRef}>
+          <ErrorBanner msg={err} />
+          {/* LLM 回答泡泡(記事後 agent 回應) */}
+          {messages.length > 0 && (
+            <div className="chat-list">
+              {messages.map((m) => (
+                <MessageBubble key={m.id} msg={m} meID={user.id} />
+              ))}
+            </div>
+          )}
+          {/* Timeline:直接顯示，不需點 chip */}
+          {entries.length === 0 && messages.length === 0 ? (
+            <div className="empty">
+              {isOwner ? '在下方輸入記事，會依時間排列在這裡。' : '在下方查詢頻道內容。'}
+            </div>
+          ) : entries.length > 0 ? (
+            <MultiTrackTimeline entries={entries} />
+          ) : null}
+        </div>
+        <div className="composer">
         <input
           value={draft}
           placeholder={isOwner ? '記事或提問…' : '用自然語言查詢這個頻道…'}
@@ -593,6 +581,7 @@ function ChatScreen({
         >
           <Send size={16} strokeWidth={2} />
         </button>
+        </div>
       </div>
     </>
   )
@@ -1138,6 +1127,7 @@ function SettingsScreen({
   isGuest,
   onAuthed,
   onLogout,
+  onBack,
 }: {
   cfg: ClientConfig
   baseURL: string
@@ -1147,6 +1137,7 @@ function SettingsScreen({
   isGuest: boolean
   onAuthed: (token: string, user: User, email: string) => void
   onLogout: () => void
+  onBack?: () => void
 }) {
   const [health, setHealth] = useState<string>('未測試')
 
@@ -1163,13 +1154,15 @@ function SettingsScreen({
   return (
     <>
       <div className="navbar">
-        <span className="btn" style={{ visibility: 'hidden' }}>
-          ←
-        </span>
+        {onBack ? (
+          <button className="btn icon-btn" onClick={onBack}>
+            <ChevronLeft size={20} strokeWidth={1.8} />
+          </button>
+        ) : (
+          <span style={{ width: 36 }} />
+        )}
         <span className="title">設定</span>
-        <span className="btn" style={{ visibility: 'hidden' }}>
-          ←
-        </span>
+        <span style={{ width: 36 }} />
       </div>
       <div className="screen-body">
         {isGuest ? (

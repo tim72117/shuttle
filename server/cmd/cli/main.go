@@ -49,18 +49,26 @@ func main() {
 	// 全域旗標（在子命令前解析）
 	useDB := false
 	apiURL := "http://localhost:8080"
-	for i, a := range os.Args[1:] {
+	args1 := os.Args[1:]
+	filtered := args1[:0:len(args1)]
+	for i := 0; i < len(args1); i++ {
+		a := args1[i]
 		if a == "-db" {
 			useDB = true
-			os.Args = append(os.Args[:i+1], os.Args[i+2:]...)
-			break
+			continue
 		}
 		if len(a) > 5 && a[:5] == "-api=" {
 			apiURL = a[5:]
-			os.Args = append(os.Args[:i+1], os.Args[i+2:]...)
-			break
+			continue
 		}
+		if a == "-api" && i+1 < len(args1) {
+			apiURL = args1[i+1]
+			i++
+			continue
+		}
+		filtered = append(filtered, a)
 	}
+	os.Args = append(os.Args[:1], filtered...)
 
 	cmd := os.Args[1]
 	args := os.Args[2:]
