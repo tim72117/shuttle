@@ -41,7 +41,7 @@ jobs:
           gcloud run deploy ${{ env.CLOUD_RUN_SERVICE }} \
             --source . \
             --region ${{ env.CLOUD_RUN_REGION }} \
-            --build-arg GH_PAT=${{ secrets.GH_PAT }} \
+            --set-build-env-vars GH_PAT=${{ secrets.GH_PAT }} \
             --update-env-vars DEV_MODE=false,SEED=false \
             --update-secrets DATABASE_URL=DATABASE_URL:latest,JWT_SECRET=JWT_SECRET:latest \
             --quiet

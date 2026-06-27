@@ -23,7 +23,6 @@ RUN npm run build
 # want 放 /want,relative replace 才解析得到。
 FROM golang:1.26 AS build
 
-ARG GH_PAT
 RUN git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"
 
 # 先單獨複製 go.mod / go.sum 以利 layer 快取(相依沒變時不重抓)。
