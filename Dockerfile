@@ -23,8 +23,9 @@ RUN npm run build
 # want 放 /want,relative replace 才解析得到。
 FROM golang:1.26 AS build
 
-# GH_PAT 由 --set-build-env-vars 注入為環境變數
-RUN test -n "$GH_PAT" && git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/" || echo "GH_PAT not set"
+# GH_PAT 由 --set-build-env-vars 注入為環境變數(必須設定)
+RUN if [ -z "$GH_PAT" ]; then echo "ERROR: GH_PAT not set" >&2; exit 1; fi && \
+    git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"
 
 # 先單獨複製 go.mod / go.sum 以利 layer 快取(相依沒變時不重抓)。
 COPY server/go.mod server/go.sum /src/server/
