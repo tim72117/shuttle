@@ -60,7 +60,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/channels/{id}/public-link", s.handleCreatePublicLink)
 	mux.HandleFunc("GET /v1/channels/{id}/public-link", s.handleGetPublicLink)
 	mux.HandleFunc("DELETE /v1/channels/{id}/public-link", s.handleDeletePublicLink)
-	mux.HandleFunc("GET /public/{token}", s.handlePublicView)
+	mux.HandleFunc("GET /v1/public/{token}", s.handlePublicView)
 	// internal — 供 CLI / LLM 操作資料，不需登入
 	mux.HandleFunc("POST /internal/channels/{id}/notify", s.handleNotify)
 	mux.HandleFunc("POST /internal/channels/{id}/entries", s.handleInternalRecord)

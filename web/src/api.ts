@@ -332,7 +332,7 @@ export function deletePublicLink(cfg: ClientConfig, channelID: string) {
 
 // 存取公開分享連結（無需登入）。
 export function fetchPublicView(baseURL: string, token: string) {
-  return fetch(`${baseURL}/public/${encodeURIComponent(token)}`)
+  return fetch(`${baseURL}/v1/public/${encodeURIComponent(token)}`)
     .then(async (r) => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       return r.json() as Promise<{ channelID: string; trips: Trip[]; entries: Entry[] }>

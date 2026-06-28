@@ -115,11 +115,11 @@ func main() {
 		dbKind = "postgres" // 不印含密碼的 DSN
 	}
 	// 組合最終 handler:API 路由優先;其餘交給前端靜態檔(SPA fallback)。
+	// 注意:/public/{token} 由前端 React 路由處理,不放在後端 API 路由裡。
 	mux := http.NewServeMux()
 	mux.Handle("/v1/", srv.Routes())
 	mux.Handle("/internal/", srv.Routes())
 	mux.Handle("/health", srv.Routes())
-	mux.Handle("/public/", srv.Routes())
 	mux.Handle("/", staticHandler())
 
 	log.Printf("Channel server 監聽 %s,DB=%s", *addr, dbKind)
