@@ -119,6 +119,7 @@ func main() {
 	mux.Handle("/v1/", srv.Routes())
 	mux.Handle("/internal/", srv.Routes())
 	mux.Handle("/health", srv.Routes())
+	mux.Handle("/public/", srv.Routes())
 	mux.Handle("/", staticHandler())
 
 	log.Printf("Channel server 監聽 %s,DB=%s", *addr, dbKind)
