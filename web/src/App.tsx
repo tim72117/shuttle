@@ -930,11 +930,12 @@ function PinIcon() {
   )
 }
 
-function NavButton({ location }: { location: string }) {
-  const url = `https://maps.apple.com/?q=${encodeURIComponent(location)}`
+function NavButton({ location, lat, lng }: { location: string; lat?: number | null; lng?: number | null }) {
+  const url = (lat != null && lng != null)
+    ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`
   return (
     <a href={url} target="_blank" rel="noopener noreferrer" className="tl-nav-btn" title="開始導航">
-      {/* 導航箭頭：向右上方的實心三角形 */}
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
         <path d="M2 12L22 2L12 22L9 13L2 12Z" />
       </svg>
@@ -965,7 +966,7 @@ function MainCard({ entry }: { entry: Entry }) {
           </div>
         </div>
       </div>
-      {entry.location && <NavButton location={entry.location} />}
+      {entry.location && <NavButton location={entry.location} lat={entry.lat} lng={entry.lng} />}
     </div>
   )
 }
@@ -1010,7 +1011,7 @@ function SubCard({ entry }: { entry: Entry }) {
           </div>
         </div>
       </div>
-      {entry.location && <NavButton location={entry.location} />}
+      {entry.location && <NavButton location={entry.location} lat={entry.lat} lng={entry.lng} />}
     </div>
   )
 }
