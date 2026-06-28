@@ -1365,17 +1365,18 @@ function PublicViewScreen({ token }: { token: string }) {
       </div>
       {data?.editable && (
         <div className="composer">
+          <div className="composer-row">
           <input
-            className="composer-input"
             placeholder="新增行程…"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
             disabled={sending}
           />
-          <button className="composer-send" onClick={send} disabled={sending || !draft.trim()}>
+          <button onClick={send} disabled={sending || !draft.trim()}>
             <Send size={16} strokeWidth={2} />
           </button>
+          </div>
         </div>
       )}
     </>
