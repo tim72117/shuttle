@@ -1086,6 +1086,8 @@ function MembersScreen({
         <div className="field">
           <input
             value={email}
+            type="email"
+            autoComplete="email"
             placeholder="輸入對方的 Email 後按 Enter"
             onChange={(e) => setEmail(e.target.value)}
             onKeyDown={(e) => isSubmitEnter(e) && invite()}
@@ -1178,6 +1180,8 @@ function SettingsScreen({
               </div>
               <ChevronLeft size={16} strokeWidth={1.5} color="#c7c7cc" style={{ transform: 'rotate(180deg)' }} />
             </div>
+            <div className="section-title">API Token (CLI 用)</div>
+            <TokenDisplay token={cfg.token} />
           </>
         )}
         <div className="section-title">後端連線</div>
@@ -1248,7 +1252,8 @@ function LoginForm({
         <label>Email</label>
         <input
           value={email}
-          autoComplete="username"
+          type="email"
+          autoComplete="email"
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
         />
@@ -1419,6 +1424,72 @@ function EntryDetailModal({
               </div>
             </>
           )}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function TokenDisplay({ token }: { token: string | null }) {
+  const [copied, setCopied] = useState(false)
+
+  const copyToken = () => {
+    if (token) {
+      navigator.clipboard.writeText(token).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+    }
+  }
+
+  if (!token) return null
+
+  const displayToken = token.substring(0, 20) + '...' + token.substring(token.length - 10)
+
+  return (
+    <>
+      <div className="field" style={{ marginBottom: 12 }}>
+        <div
+          style={{
+            background: '#f5f5f5',
+            padding: 12,
+            borderRadius: 8,
+            fontFamily: 'monospace',
+            fontSize: 12,
+            wordBreak: 'break-all',
+            color: '#333',
+            marginBottom: 8,
+          }}
+        >
+          {displayToken}
+        </div>
+        <button
+          onClick={copyToken}
+          style={{
+            width: '100%',
+            padding: 10,
+            border: 'none',
+            borderRadius: 8,
+            background: copied ? '#34C759' : '#007AFF',
+            color: '#fff',
+            fontSize: 14,
+            fontWeight: 500,
+            cursor: 'pointer',
+            transition: 'background 0.2s',
+          }}
+        >
+          {copied ? '✅ 已複製' : '📋 複製 Token'}
+        </button>
+      </div>
+      <div className="field" style={{ color: 'var(--ios-gray)', fontSize: 13, marginBottom: 16 }}>
+        <strong>CLI 使用方式：</strong>
+        <div style={{ marginTop: 8, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+{`export CHANNEL_TOKEN="<你的 token>"
+
+# 設定行程：
+curl -X POST $CHANNEL_API_URL/v1/... \\
+  -H "Authorization: Bearer $CHANNEL_TOKEN" \\
+  -d '...'`}
         </div>
       </div>
     </>
