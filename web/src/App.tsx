@@ -1423,8 +1423,8 @@ function LoginForm({
   onAuthed: (token: string, user: User, email: string) => void
 }) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
-  const [email, setEmail] = useState('alice@channel.dev')
-  const [password, setPassword] = useState('password')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
