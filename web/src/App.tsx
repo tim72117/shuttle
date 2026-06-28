@@ -351,8 +351,6 @@ function ChatScreen({
   const [showMembers, setShowMembers] = useState(false)
   // 分享彈窗
   const [showShare, setShowShare] = useState(false)
-  // 點選項目時顯示詳細資訊。
-  const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const navbarRef = useRef<HTMLDivElement>(null)
   const lastScrollY = useRef(0)
@@ -557,16 +555,6 @@ function ChatScreen({
     )
   }
 
-  // 點選項目時顯示詳細資訊。
-  if (selectedEntry) {
-    return (
-      <EntryDetailModal
-        entry={selectedEntry}
-        onBack={() => setSelectedEntry(null)}
-      />
-    )
-  }
-
   return (
     <>
       <div className="navbar" ref={navbarRef}>
@@ -593,7 +581,7 @@ function ChatScreen({
               {isOwner ? '在下方輸入記事，會依時間排列在這裡。' : '在下方查詢頻道內容。'}
             </div>
           ) : entries.length > 0 ? (
-            <MultiTrackTimeline entries={entries} todayRef={todayRef} onEntryClick={setSelectedEntry} />
+            <MultiTrackTimeline entries={entries} todayRef={todayRef} />
           ) : null}
         </div>
 
@@ -869,7 +857,7 @@ function buildTLRows(entries: Entry[]): TLRow[] {
 
 // ---- 純渲染元件 ----
 
-function MultiTrackTimeline({ entries, todayRef, onEntryClick }: { entries: Entry[], todayRef?: React.RefObject<HTMLDivElement>, onEntryClick?: (e: Entry) => void }) {
+function MultiTrackTimeline({ entries, todayRef }: { entries: Entry[], todayRef?: React.RefObject<HTMLDivElement> }) {
   const rows = buildTLRows(entries)
   const today = new Date().toISOString().slice(0, 10)
   let todayAttached = false
@@ -918,8 +906,8 @@ function MultiTrackTimeline({ entries, todayRef, onEntryClick }: { entries: Entr
             </div>
             {/* 卡片欄 */}
             <div className="tl-col-card">
-              {card?.kind === 'main' && <MainCard entry={card.entry} onEntryClick={onEntryClick} />}
-              {card?.kind === 'sub'  && <SubCard  entry={card.entry} onEntryClick={onEntryClick} />}
+              {card?.kind === 'main' && <MainCard entry={card.entry} />}
+              {card?.kind === 'sub'  && <SubCard  entry={card.entry} />}
               {card?.kind === 'end'  && <EndCard  entry={card.entry} />}
             </div>
           </div>
@@ -951,11 +939,10 @@ function NavButton({ location, lat, lng }: { location: string; lat?: number | nu
   )
 }
 
-function MainCard({ entry, onEntryClick }: { entry: Entry; onEntryClick?: (e: Entry) => void }) {
+function MainCard({ entry }: { entry: Entry }) {
   const [open, setOpen] = useState(false)
-  const handleClick = () => onEntryClick ? onEntryClick(entry) : setOpen(o => !o)
   return (
-    <div className="tl-main-card tl-card-row" onClick={handleClick} style={{ cursor: 'pointer' }}>
+    <div className="tl-main-card tl-card-row" onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer' }}>
       <div className="tl-card-content">
         <div className="tl-item">
           <span className="tl-main-title">{entry.item}</span>
@@ -988,14 +975,13 @@ function EndCard({ entry }: { entry: Entry }) {
   )
 }
 
-function SubCard({ entry, onEntryClick }: { entry: Entry; onEntryClick?: (e: Entry) => void }) {
+function SubCard({ entry }: { entry: Entry }) {
   const [open, setOpen] = useState(false)
   const time = entryTimeLabel(entry)
   const span = entrySpanLabel(entry)
-  const handleClick = () => onEntryClick ? onEntryClick(entry) : setOpen(o => !o)
   return (
     <div className={`tl-card tl-card-row${span ? ' tl-card-span' : ''}`}
-      onClick={handleClick}
+      onClick={() => setOpen(o => !o)}
       style={{ cursor: 'pointer' }}>
       <div className="tl-card-content">
         <div className="tl-item">
@@ -1305,7 +1291,6 @@ function PublicViewScreen({ token }: { token: string }) {
   const [loading, setLoading] = useState(true)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
-  const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null)
   const todayRef = useRef<HTMLDivElement>(null as unknown as HTMLDivElement)
   const bodyRef = useRef<HTMLDivElement>(null)
 
@@ -1350,10 +1335,6 @@ function PublicViewScreen({ token }: { token: string }) {
     }
   }
 
-  if (selectedEntry) {
-    return <EntryDetailModal entry={selectedEntry} onBack={() => setSelectedEntry(null)} />
-  }
-
   return (
     <>
       <div className="navbar">
@@ -1367,7 +1348,7 @@ function PublicViewScreen({ token }: { token: string }) {
         {data && (
           data.entries.length === 0
             ? <div className="empty">此頻道尚無行程。</div>
-            : <MultiTrackTimeline entries={data.entries} todayRef={todayRef} onEntryClick={setSelectedEntry} />
+            : <MultiTrackTimeline entries={data.entries} todayRef={todayRef} />
         )}
       </div>
       {data?.editable && (
@@ -1601,110 +1582,6 @@ function LoginForm({
   )
 }
 
-// 項目詳細資訊彈窗。
-function EntryDetailModal({
-  entry,
-  onBack,
-}: {
-  entry: Entry
-  onBack: () => void
-}) {
-  const when = entry.start
-    ? entry.startTime ? `${entry.start} ${entry.startTime}` : entry.start
-    : '未指定時間'
-
-  return (
-    <>
-      <div className="navbar">
-        <button className="btn" onClick={onBack}>
-          ‹ 返回
-        </button>
-        <span className="title">項目詳情</span>
-        <span className="btn" style={{ visibility: 'hidden' }} />
-      </div>
-      <div className="screen-body" style={{ padding: '16px' }}>
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 12, color: 'var(--ios-gray)', marginBottom: 4 }}>
-            名稱
-          </div>
-          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>
-            {entry.item}
-          </div>
-
-          {entry.location && (
-            <>
-              <div style={{ fontSize: 12, color: 'var(--ios-gray)', marginBottom: 4 }}>
-                地點
-              </div>
-              <div style={{ fontSize: 16, marginBottom: 16 }}>
-                📍 {entry.location}
-              </div>
-            </>
-          )}
-
-          <div style={{ fontSize: 12, color: 'var(--ios-gray)', marginBottom: 4 }}>
-            時間
-          </div>
-          <div style={{ fontSize: 16, marginBottom: 16 }}>
-            🕐 {when}
-            {entry.end ? ` ~ ${entry.end}` : ''}
-          </div>
-
-          {entry.summary && (
-            <>
-              <div style={{ fontSize: 12, color: 'var(--ios-gray)', marginBottom: 4 }}>
-                摘要
-              </div>
-              <div style={{ fontSize: 14, color: '#666', marginBottom: 16 }}>
-                {entry.summary}
-              </div>
-            </>
-          )}
-
-          {(entry.category || (entry.tags && entry.tags.length > 0)) && (
-            <>
-              <div style={{ fontSize: 12, color: 'var(--ios-gray)', marginBottom: 4 }}>
-                標籤
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {entry.category && (
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      padding: '4px 10px',
-                      background: '#e8f0ff',
-                      color: '#007aff',
-                      borderRadius: 6,
-                      fontSize: 12,
-                      fontWeight: 500,
-                    }}
-                  >
-                    {entry.category}
-                  </span>
-                )}
-                {entry.tags?.map((t) => (
-                  <span
-                    key={t}
-                    style={{
-                      display: 'inline-block',
-                      padding: '4px 10px',
-                      background: '#f2f2f7',
-                      color: '#666',
-                      borderRadius: 6,
-                      fontSize: 12,
-                    }}
-                  >
-                    #{t}
-                  </span>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </>
-  )
-}
 
 function TokenDisplay({ token }: { token: string | null }) {
   const [copied, setCopied] = useState(false)
