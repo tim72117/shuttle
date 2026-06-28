@@ -415,10 +415,8 @@ function ChatScreen({
       const el = todayRef.current
       const body = bodyRef.current
       body.scrollTo({ top: el.offsetTop - 60, behavior: 'instant' })
-    } else {
-      bodyRef.current?.scrollTo(0, bodyRef.current.scrollHeight)
     }
-  }, [messages, entries])
+  }, [entries])
 
   // 本地訊息(不寫入後端,純前端顯示用):查詢的提問/回答泡泡。
   const mkLocalMsg = (
@@ -613,13 +611,6 @@ function ChatScreen({
               {messages.map((m) => (
                 <MessageBubble key={m.id} msg={m} meID={user.id} />
               ))}
-              {sending && (
-                <div className="bubble-group">
-                  <div className="bubble pending">
-                    <WaveLoader />
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -705,20 +696,19 @@ function WaveLoader() {
 
 // PresentedCard 顯示 present_entries 輸出的條目(查詢結果列表用)。
 function PresentedCard({ entry }: { entry: PresentedEntry }) {
+  const allDay = !entry.startTime
   const when = entry.start
-    ? entry.allDay
-      ? entry.start.slice(0, 10)
-      : entry.start
+    ? allDay ? entry.start : `${entry.start} ${entry.startTime}`
     : '未指定時間'
+  const endLabel = entry.end
+    ? entry.endTime ? ` ~ ${entry.end} ${entry.endTime}` : ` ~ ${entry.end}`
+    : ''
   return (
     <div className="entry-card">
       <span className="entry-ico">📅</span>
       <div className="entry-body">
         <div className="entry-item">{entry.item}</div>
-        <div className="entry-when">
-          {when}
-          {entry.end ? ` ~ ${entry.end}` : ''}
-        </div>
+        <div className="entry-when">{when}{endLabel}</div>
       </div>
     </div>
   )
@@ -739,19 +729,13 @@ function parseDateParts(d: string): { year: string; month: string; day: string }
 }
 
 function entryTimeLabel(e: Entry): string {
-  if (e.allDay || !e.start || e.start.length <= 10) return ''
-  return e.start.slice(11)
+  return e.startTime ?? ''
 }
 
 function entrySpanLabel(e: Entry): string {
   if (!e.end || e.end === e.start) return ''
-  const sd = e.start?.slice(0, 10) ?? ''
-  const ed = e.end.slice(0, 10)
-  if (sd === ed) {
-    const t = e.end.length > 10 ? e.end.slice(11) : ''
-    return t ? `~ ${t}` : ''
-  }
-  return `~ ${ed}`
+  if (e.end === e.start) return e.endTime ? `~ ${e.endTime}` : ''
+  return e.endTime ? `~ ${e.end} ${e.endTime}` : `~ ${e.end}`
 }
 
 // ---- 資料型別 ----
@@ -981,11 +965,11 @@ function MainCard({ entry }: { entry: Entry }) {
             {entry.summary && <div className="tl-expand-summary">{entry.summary}</div>}
             <div className="tl-expand-row">
               <span className="tl-expand-label">開始</span>
-              <span>{entry.start ?? '—'}</span>
+              <span>{entry.start ? (entry.startTime ? `${entry.start} ${entry.startTime}` : entry.start) : '—'}</span>
             </div>
             {entry.end && <div className="tl-expand-row">
               <span className="tl-expand-label">結束</span>
-              <span>{entry.end}</span>
+              <span>{entry.endTime ? `${entry.end} ${entry.endTime}` : entry.end}</span>
             </div>}
           </div>
         </div>
@@ -1007,11 +991,10 @@ function SubCard({ entry }: { entry: Entry }) {
   const [open, setOpen] = useState(false)
   const time = entryTimeLabel(entry)
   const span = entrySpanLabel(entry)
-  const hasExpand = !!(entry.summary || entry.end)
   return (
     <div className={`tl-card tl-card-row${span ? ' tl-card-span' : ''}`}
-      onClick={() => hasExpand && setOpen(o => !o)}
-      style={hasExpand ? { cursor: 'pointer' } : undefined}>
+      onClick={() => setOpen(o => !o)}
+      style={{ cursor: 'pointer' }}>
       <div className="tl-card-content">
         <div className="tl-item">
           {time && <span className="tl-time">{time}</span>}
@@ -1028,9 +1011,13 @@ function SubCard({ entry }: { entry: Entry }) {
         <div className={`tl-card-expand${open ? ' open' : ''}`}>
           <div className="tl-card-expand-inner">
             {entry.summary && <div className="tl-expand-summary">{entry.summary}</div>}
+            {entry.start && <div className="tl-expand-row">
+              <span className="tl-expand-label">開始</span>
+              <span>{entry.startTime ? `${entry.start} ${entry.startTime}` : entry.start}</span>
+            </div>}
             {entry.end && <div className="tl-expand-row">
               <span className="tl-expand-label">結束</span>
-              <span>{entry.end}</span>
+              <span>{entry.endTime ? `${entry.end} ${entry.endTime}` : entry.end}</span>
             </div>}
           </div>
         </div>
@@ -1282,7 +1269,7 @@ function ShareModal({
 // ---- 公開分享頁（/public/{token}，無需登入） ----
 
 function PublicViewScreen({ token }: { token: string }) {
-  const [data, setData] = useState<{ channelID: string; trips: import('./types').Trip[]; entries: Entry[] } | null>(null)
+  const [data, setData] = useState<{ channelID: string; channelName: string; entries: Entry[] } | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const todayRef = useRef<HTMLDivElement>(null as unknown as HTMLDivElement)
@@ -1304,6 +1291,11 @@ function PublicViewScreen({ token }: { token: string }) {
   }, [resolvedBase, token])
 
   useEffect(() => {
+    if (data?.channelName) document.title = data.channelName
+    return () => { document.title = 'Channel · 後端測試台' }
+  }, [data?.channelName])
+
+  useEffect(() => {
     if (data && todayRef.current && bodyRef.current) {
       bodyRef.current.scrollTo({ top: todayRef.current.offsetTop - 60, behavior: 'instant' })
     }
@@ -1313,7 +1305,7 @@ function PublicViewScreen({ token }: { token: string }) {
     <>
       <div className="navbar">
         <span style={{ width: 36 }} />
-        <span className="title">{data?.trips?.[0]?.title ?? '行程'}</span>
+        <span className="title">{data?.channelName ?? '行程'}</span>
         <span style={{ width: 36 }} />
       </div>
       <div className="screen-body" ref={bodyRef}>
@@ -1549,9 +1541,7 @@ function EntryDetailModal({
   onBack: () => void
 }) {
   const when = entry.start
-    ? entry.allDay
-      ? entry.start.slice(0, 10)
-      : entry.start
+    ? entry.startTime ? `${entry.start} ${entry.startTime}` : entry.start
     : '未指定時間'
 
   return (

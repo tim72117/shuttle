@@ -1,4 +1,4 @@
-package wanttools
+package trip
 
 import (
 	"fmt"
@@ -27,35 +27,43 @@ type TripEntriesTool struct {
 	types.BaseToolConfig
 }
 
-func (t *TripEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]types.ResultContentBlock, error) {
-	if tripService == nil {
-		return nil, fmt.Errorf("行程服務未初始化")
-	}
+func (t *TripEntriesTool) ValidateInput(args types.ToolArguments, _ types.ToolContext) error {
 	tripID := args.GetString("tripID")
 	if tripID == "" {
-		return nil, fmt.Errorf("tripID 不可為空")
+		return fmt.Errorf("tripID is required")
 	}
-	entries, err := tripService.ListTripEntries(CurrentChannel(), tripID)
+	if !strings.HasPrefix(tripID, "trip_") {
+		return fmt.Errorf("invalid tripID %q: must start with 'trip_'", tripID)
+	}
+	return nil
+}
+
+func (t *TripEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]types.ResultContentBlock, error) {
+	if tripService == nil {
+		return nil, fmt.Errorf("trip service not initialized")
+	}
+	tripID := args.GetString("tripID")
+	entries, err := tripService.ListTripEntries(currentChannel(), tripID)
 	if err != nil {
-		return nil, fmt.Errorf("查詢條目失敗: %w", err)
+		return nil, fmt.Errorf("failed to list trip entries: %w", err)
 	}
 	if len(entries) == 0 {
-		msg := fmt.Sprintf("行程 %s 下沒有條目", tripID)
+		msg := fmt.Sprintf("No entries in trip %s", tripID)
 		ctx.EmitToolResult(map[string]interface{}{"message": msg, "entries": []interface{}{}})
 		return []types.ResultContentBlock{types.TextBlock(msg)}, nil
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("行程 %s 共 %d 筆條目：\n", tripID, len(entries)))
+	sb.WriteString(fmt.Sprintf("Trip %s — %d entry(s):\n", tripID, len(entries)))
 	entryList := make([]map[string]interface{}, 0, len(entries))
 	for _, e := range entries {
-		line := fmt.Sprintf("・%s", e.Item)
+		line := fmt.Sprintf("・[entryID=%s] %s", e.ID, e.Item)
 		if e.Start != "" {
-			line += fmt.Sprintf("（%s", e.Start)
+			line += fmt.Sprintf(" (%s", e.Start)
 			if e.End != "" && e.End != e.Start {
 				line += " ~ " + e.End
 			}
-			line += "）"
+			line += ")"
 		}
 		if e.Location != "" {
 			line += " @ " + e.Location
@@ -76,18 +84,18 @@ func (t *TripEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext) 
 }
 
 func (t *TripEntriesTool) RenderToolUse(args types.ToolArguments) string {
-	return fmt.Sprintf("正在查詢行程 %s 的條目...", args.GetString("tripID"))
+	return fmt.Sprintf("Listing entries for trip %s...", args.GetString("tripID"))
 }
 
 func (t *TripEntriesTool) RenderToolUseError(err error) string {
-	return fmt.Sprintf("查詢條目失敗：%v", err)
+	return fmt.Sprintf("Failed to list trip entries: %v", err)
 }
 
 func (t *TripEntriesTool) RenderToolResult(data map[string]interface{}) string {
 	if msg, ok := data["message"].(string); ok {
 		return msg
 	}
-	return "已取得行程條目"
+	return "Trip entries listed"
 }
 
 func init() {

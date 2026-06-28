@@ -7,15 +7,27 @@ import (
 	"github.com/channel/server/internal/tripsvc"
 )
 
+// handleInternalListChannels GET /internal/channels
+func (s *Server) handleInternalListChannels(w http.ResponseWriter, r *http.Request) {
+	channels, err := s.store.ListAllChannels()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "list_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"channels": channels})
+}
+
 // handleInternalRecord POST /internal/channels/{id}/entries
 // 寫入一筆 entry，回傳 entryID 與候選行程。
 func (s *Server) handleInternalRecord(w http.ResponseWriter, r *http.Request) {
 	channelID := r.PathValue("id")
 	var body struct {
-		Item     string `json:"item"`
-		Start    string `json:"start"`
-		End      string `json:"end"`
-		Location string `json:"location"`
+		Item      string `json:"item"`
+		Start     string `json:"start"`
+		StartTime string `json:"startTime"`
+		End       string `json:"end"`
+		EndTime   string `json:"endTime"`
+		Location  string `json:"location"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Item == "" {
 		writeErr(w, http.StatusBadRequest, "invalid_body", "item 必填")
@@ -26,7 +38,9 @@ func (s *Server) handleInternalRecord(w http.ResponseWriter, r *http.Request) {
 		ChannelID: channelID,
 		Item:      body.Item,
 		Start:     body.Start,
+		StartTime: body.StartTime,
 		End:       body.End,
+		EndTime:   body.EndTime,
 		Location:  body.Location,
 	})
 	if err != nil {
@@ -61,13 +75,15 @@ func (s *Server) handleInternalAddToTrip(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleInternalUpdateEntry(w http.ResponseWriter, r *http.Request) {
 	entryID := r.PathValue("id")
 	var body struct {
-		Item     string         `json:"item"`
-		Start    string         `json:"start"`
-		End      string         `json:"end"`
-		Location string         `json:"location"`
-		Summary  string         `json:"summary"`
-		Kind     string         `json:"kind"`
-		Detail   map[string]any `json:"detail"`
+		Item      string         `json:"item"`
+		Start     string         `json:"start"`
+		StartTime string         `json:"startTime"`
+		End       string         `json:"end"`
+		EndTime   string         `json:"endTime"`
+		Location  string         `json:"location"`
+		Summary   string         `json:"summary"`
+		Kind      string         `json:"kind"`
+		Detail    map[string]any `json:"detail"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_body", err.Error())
@@ -75,14 +91,16 @@ func (s *Server) handleInternalUpdateEntry(w http.ResponseWriter, r *http.Reques
 	}
 	svc := tripsvc.New(s.store, nil)
 	if err := svc.UpdateEntry(tripsvc.UpdateEntryInput{
-		ID:       entryID,
-		Item:     body.Item,
-		Start:    body.Start,
-		End:      body.End,
-		Location: body.Location,
-		Summary:  body.Summary,
-		Kind:     body.Kind,
-		Detail:   body.Detail,
+		ID:        entryID,
+		Item:      body.Item,
+		Start:     body.Start,
+		StartTime: body.StartTime,
+		End:       body.End,
+		EndTime:   body.EndTime,
+		Location:  body.Location,
+		Summary:   body.Summary,
+		Kind:      body.Kind,
+		Detail:    body.Detail,
 	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "update_failed", err.Error())
 		return

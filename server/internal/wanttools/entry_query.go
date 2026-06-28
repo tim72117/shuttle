@@ -6,21 +6,15 @@ import (
 	"time"
 
 	"github.com/channel/server/internal/store"
-	"github.com/channel/server/internal/tripsvc"
 	"github.com/tim72117/want/types"
 )
 
-// entryStore 是 query_entries 工具用來查條目的 store(server 啟動時用 BindStore 注入實例)。
-// 工具直接呼叫 store,不繞 sink;channelID 取自當前記錄 context(CurrentChannel)。
+// entryStore 是工具共用的 store 實例(server 啟動時用 BindStore 注入)。
 var entryStore *store.Store
 
-// tripService 是行程服務層;add_to_trip 等工具經它操作,與 CLI 共用同一套邏輯。
-var tripService *tripsvc.Service
-
-// BindStore 提供工具查詢用的 store 實例,並一併建立 tripsvc 服務(server 啟動時呼叫)。
+// BindStore 注入 store 實例(server 啟動時呼叫)。
 func BindStore(s *store.Store) {
 	entryStore = s
-	tripService = tripsvc.New(s, nil)
 }
 
 func init() {
@@ -32,7 +26,7 @@ func init() {
 // QueryEntriesDeclaration 是給 LLM 看的工具宣告。
 // 用於查詢頻道中已記錄的條目(record_entry 記下的待辦/行程/會議),可選時間範圍。
 var QueryEntriesDeclaration = types.ToolDeclaration{
-	Name: "query_entries",
+	Name: "entry_query",
 	Description: "查詢頻道中已記錄的條目(待辦、行程、會議等)。" +
 		"當使用者在提問、想知道某段時間有什麼安排時呼叫。可用 from / to 限定時間範圍。" +
 		"回傳符合的條目清單,據此回答使用者。",
@@ -94,11 +88,7 @@ func (t *QueryEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext)
 		sb.WriteString("(沒有符合的條目)")
 	} else {
 		for _, e := range entries {
-			sb.WriteString("・")
-			sb.WriteString(describeTime(e.Start, e.End, e.AllDay))
-			sb.WriteString(" ")
-			sb.WriteString(e.Item)
-			sb.WriteString("\n")
+			sb.WriteString(fmt.Sprintf("・[entryID=%s] %s %s\n", e.ID, describeTime(e.Start, e.StartTime, e.End, e.EndTime), e.Item))
 		}
 	}
 	summary := strings.TrimRight(sb.String(), "\n")

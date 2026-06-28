@@ -36,15 +36,16 @@ func (channelRow) TableName() string { return "channels" }
 // 承載所有 LLM 結構化結果——事件時間(item/start/end/allDay)與標注(category/tags/summary)。
 // 原話(message)不存後端,改由各裝置端 DB 保存(local-first)。
 type entryRow struct {
-	ID        string `gorm:"primaryKey;column:id"`
-	ChannelID string `gorm:"column:channel_id;not null;index"`
-	Item      string `gorm:"column:item;not null"`
-	Start     string `gorm:"column:start"`
-	End       string `gorm:"column:end_at"` // end 是 SQL 保留字,欄位改名 end_at
-	AllDay    bool   `gorm:"column:all_day"`
-	Location string   `gorm:"column:location"`
-	Lat      *float64 `gorm:"column:lat"`
-	Lng      *float64 `gorm:"column:lng"`
+	ID        string   `gorm:"primaryKey;column:id"`
+	ChannelID string   `gorm:"column:channel_id;not null;index"`
+	Item      string   `gorm:"column:item;not null"`
+	Start     string   `gorm:"column:start"`
+	StartTime string   `gorm:"column:start_time"` // 'HH:MM';空=全日
+	End       string   `gorm:"column:end_at"`     // end 是 SQL 保留字,欄位改名 end_at
+	EndTime   string   `gorm:"column:end_time"`   // 'HH:MM'
+	Location  string   `gorm:"column:location"`
+	Lat       *float64 `gorm:"column:lat"`
+	Lng       *float64 `gorm:"column:lng"`
 	// 所屬行程;NULL=未歸組。後端依時間自動歸組。
 	TripID *string `gorm:"column:trip_id;index"`
 	// LLM 標注(原本在 message 上,改存 entry)。

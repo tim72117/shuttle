@@ -58,10 +58,11 @@ type Me struct {
 // PresentedEntry 是查詢回答附帶、要展示給使用者的結構化條目。
 // 形狀與 llm.AssistEntry / wanttools.PresentedEntry 一致,讓前端用同一套列表渲染。
 type PresentedEntry struct {
-	Item   string `json:"item"`
-	Start  string `json:"start"`
-	End    string `json:"end"`
-	AllDay bool   `json:"allDay"`
+	Item      string `json:"item"`
+	Start     string `json:"start"`
+	StartTime string `json:"startTime"`
+	End       string `json:"end"`
+	EndTime   string `json:"endTime"`
 }
 
 // SearchAnswer 對應語意查詢回應。
@@ -76,15 +77,16 @@ type SearchAnswer struct {
 // Entry 是主體:LLM 處理訊息後產出的「事件/條目」,承載所有結構化結果。
 // 可獨立存在,並可關聯多則來源訊息(多對多)。
 type Entry struct {
-	ID        string `json:"id"`
-	ChannelID string `json:"channelID"`
-	Item      string `json:"item"`          // 事項描述
-	Start     string `json:"start"`         // 'YYYY-MM-DD HH:MM' 或全日 'YYYY-MM-DD';可空
-	End       string `json:"end,omitempty"` // 範圍結束;可空
-	AllDay    bool   `json:"allDay"`        // 全日事件
-	Location string   `json:"location"`           // 地點(可空)
-	Lat      *float64 `json:"lat,omitempty"`      // 緯度(由 Places API 自動補)
-	Lng      *float64 `json:"lng,omitempty"`      // 經度
+	ID        string   `json:"id"`
+	ChannelID string   `json:"channelID"`
+	Item      string   `json:"item"`              // 事項描述
+	Start     string   `json:"start"`             // 'YYYY-MM-DD';可空
+	StartTime string   `json:"startTime"`         // 'HH:MM';空=全日
+	End       string   `json:"end,omitempty"`     // 範圍結束日期;可空
+	EndTime   string   `json:"endTime,omitempty"` // 範圍結束時刻;可空
+	Location  string   `json:"location"`      // 地點(可空)
+	Lat       *float64 `json:"lat,omitempty"` // 緯度(由 Places API 自動補)
+	Lng       *float64 `json:"lng,omitempty"` // 經度
 	// 所屬行程(Trip)。後端依時間自動歸組:未歸組為 null。
 	TripID *string `json:"tripID,omitempty"`
 	// LLM 標注(原本在 Message 上,改放 Entry;目前先留空,待後續接上 Classify)。

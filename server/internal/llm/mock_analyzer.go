@@ -57,16 +57,12 @@ func newEntryID() string {
 	return "ent_" + hex.EncodeToString(b)
 }
 
-// fmtDate 把「距今天數 + 時刻」換算成 entry 的 start/end 字串。
-func fmtDate(day int, clock string) string {
+// fmtDate 把「距今天數」換算成日期字串。
+func fmtDate(day int) string {
 	if day < 0 {
-		return "" // 無時間
+		return ""
 	}
-	d := time.Now().UTC().AddDate(0, 0, day)
-	if clock == "" {
-		return d.Format("2006-01-02") // 全日
-	}
-	return d.Format("2006-01-02") + " " + clock
+	return time.Now().UTC().AddDate(0, 0, day).Format("2006-01-02")
 }
 
 // AssistForSession 模擬 owner 記事:取下一筆預設情境寫成 entry。不解析 text(僅作觸發)。
@@ -82,12 +78,12 @@ func (m *MockAnalyzer) AssistForSession(_, channelID, _, _ string, _ func(entryI
 	m.next++
 	m.mu.Unlock()
 
-	start := fmtDate(sc.startDay, sc.clock)
-	var end string
+	startDate := fmtDate(sc.startDay)
+	startTime := sc.clock
+	var endDate string
 	if sc.endDay >= 0 {
-		end = fmtDate(sc.endDay, "") // end 用全日(對齊區間事件)
+		endDate = fmtDate(sc.endDay)
 	}
-	allDay := start != "" && len(start) == 10
 
 	// 1. 寫 entry(tripID 留 nil,不自動歸組)。
 	id := newEntryID()
@@ -95,23 +91,23 @@ func (m *MockAnalyzer) AssistForSession(_, channelID, _, _ string, _ func(entryI
 		ID:        id,
 		ChannelID: channelID,
 		Item:      sc.item,
-		Start:     start,
-		End:       end,
-		AllDay:    allDay,
+		Start:     startDate,
+		StartTime: startTime,
+		End:       endDate,
 		CreatedAt: time.Now().UTC(),
 	}); err != nil {
 		return AssistResult{Kind: "error", Text: "mock 寫入失敗: " + err.Error()}
 	}
 
 	// 2~3. 有時間才考慮歸組:查候選,模擬 LLM 決定(有候選歸入第一個,否則新建)。
-	if start != "" {
-		candidates, err := m.store.FindOverlappingTrips(channelID, start, end)
+	if startDate != "" {
+		candidates, err := m.store.FindOverlappingTrips(channelID, startDate, endDate)
 		if err == nil {
 			var tripID string
 			if len(candidates) > 0 {
 				tripID = candidates[0].ID // 模擬 LLM 判斷「屬於這個行程」
 			} else {
-				tripID, _ = m.store.CreateTrip(channelID, sc.item, start, end) // 模擬 LLM 新建
+				tripID, _ = m.store.CreateTrip(channelID, sc.item, startDate, endDate) // 模擬 LLM 新建
 			}
 			if tripID != "" {
 				_ = m.store.SetEntryTrip(id, &tripID)
@@ -148,10 +144,11 @@ func (m *MockAnalyzer) Answer(channelID, _ string) model.SearchAnswer {
 		}
 		sb.WriteString("・" + when + " " + e.Item + "\n")
 		presented = append(presented, model.PresentedEntry{
-			Item:   e.Item,
-			Start:  e.Start,
-			End:    e.End,
-			AllDay: e.AllDay,
+			Item:      e.Item,
+			Start:     e.Start,
+			StartTime: e.StartTime,
+			End:       e.End,
+			EndTime:   e.EndTime,
 		})
 	}
 

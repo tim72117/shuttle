@@ -37,6 +37,11 @@ func New(st *store.Store, an llm.Analyzer, signer *auth.Signer, devMode bool) *S
 	}
 }
 
+// NotifyEntriesUpdated 廣播 entries_updated 給指定頻道的訂閱者(供 wanttools 呼叫)。
+func (s *Server) NotifyEntriesUpdated(channelID string) {
+	s.hub.Broadcast(channelID, map[string]any{"event": "entries_updated", "channelID": channelID})
+}
+
 // Routes 註冊路由(Go 1.22+ 的方法+路徑樣式)。
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -62,6 +67,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /v1/channels/{id}/public-link", s.handleDeletePublicLink)
 	mux.HandleFunc("GET /v1/public/{token}", s.handlePublicView)
 	// internal — 供 CLI / LLM 操作資料，不需登入
+	mux.HandleFunc("GET /internal/channels", s.handleInternalListChannels)
 	mux.HandleFunc("POST /internal/channels/{id}/notify", s.handleNotify)
 	mux.HandleFunc("POST /internal/channels/{id}/entries", s.handleInternalRecord)
 	mux.HandleFunc("POST /internal/entries/{id}/trip", s.handleInternalAddToTrip)

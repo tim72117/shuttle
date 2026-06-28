@@ -138,9 +138,8 @@ function EntriesView({
       {entries.map((e) => (
         <div key={e.id} className="entry-row">
           <span className="entry-when-mono">
-            {e.start || '(無時間)'}
-            {e.end ? ` ~ ${e.end}` : ''}
-            {e.allDay ? ' 全日' : ''}
+            {e.start ? (e.startTime ? `${e.start} ${e.startTime}` : `${e.start} 全日`) : '(無時間)'}
+            {e.end ? ` ~ ${e.endTime ? `${e.end} ${e.endTime}` : e.end}` : ''}
           </span>
           <span className="entry-item-mono">{e.item}</span>
           <span className="entry-id-mono">{e.id}</span>

@@ -96,8 +96,9 @@ func main() {
 				ChannelID: channelID,
 				Item:      e.Item,
 				Start:     e.Start,
+				StartTime: e.StartTime,
 				End:       e.End,
-				AllDay:    e.AllDay,
+				EndTime:   e.EndTime,
 				CreatedAt: nowUTC(),
 			})
 			return id, err
@@ -109,6 +110,7 @@ func main() {
 
 	signer := auth.NewSigner(*jwtSecret, 30*24*time.Hour)
 	srv := api.New(st, analyzer, signer, *devMode)
+	wanttools.BindNotify(srv.NotifyEntriesUpdated)
 
 	dbKind := "sqlite:" + dsn
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
@@ -176,8 +178,8 @@ func seedIfEmpty(st *store.Store) error {
 	}
 	// 原話不存後端;seed 直接寫入示範 entry(事件/條目),對齊「entry 為主體」。
 	for _, e := range []model.Entry{
-		{Item: "開會敲定 Q3 產品規格", Start: "2026-06-29 15:00"},
-		{Item: "準備預算上調提案(+15%)", Start: "2026-06-30", AllDay: true},
+		{Item: "開會敲定 Q3 產品規格", Start: "2026-06-29", StartTime: "15:00"},
+		{Item: "準備預算上調提案(+15%)", Start: "2026-06-30"},
 		{Item: "修登入頁的 bug", Start: ""},
 	} {
 		e.ID = "ent_" + randHex()

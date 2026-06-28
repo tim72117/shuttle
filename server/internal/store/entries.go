@@ -13,8 +13,9 @@ func toEntry(r entryRow) model.Entry {
 		ChannelID: r.ChannelID,
 		Item:      r.Item,
 		Start:     r.Start,
+		StartTime: r.StartTime,
 		End:       r.End,
-		AllDay:    r.AllDay,
+		EndTime:   r.EndTime,
 		Location:  r.Location,
 		Lat:       r.Lat,
 		Lng:       r.Lng,
@@ -36,8 +37,9 @@ func (s *Store) InsertEntry(e model.Entry) error {
 		ChannelID: e.ChannelID,
 		Item:      e.Item,
 		Start:     e.Start,
+		StartTime: e.StartTime,
 		End:       e.End,
-		AllDay:    e.AllDay,
+		EndTime:   e.EndTime,
 		Location:  e.Location,
 		Lat:       e.Lat,
 		Lng:       e.Lng,
@@ -59,7 +61,7 @@ func (s *Store) SetEntryLatLng(id string, lat, lng float64) error {
 }
 
 // UpdateEntry 更新一筆 entry 的可編輯欄位；留空字串的欄位不更新。
-func (s *Store) UpdateEntry(id, item, start, end, location, summary, kind string, detail map[string]any) error {
+func (s *Store) UpdateEntry(id, item, start, startTime, end, endTime, location, summary, kind string, detail map[string]any) error {
 	fields := map[string]any{}
 	if item != "" {
 		fields["item"] = item
@@ -67,8 +69,14 @@ func (s *Store) UpdateEntry(id, item, start, end, location, summary, kind string
 	if start != "" {
 		fields["start"] = start
 	}
+	if startTime != "" {
+		fields["start_time"] = startTime
+	}
 	if end != "" {
 		fields["end_at"] = end
+	}
+	if endTime != "" {
+		fields["end_time"] = endTime
 	}
 	if location != "" {
 		fields["location"] = location
@@ -86,6 +94,18 @@ func (s *Store) UpdateEntry(id, item, start, end, location, summary, kind string
 		return nil
 	}
 	return s.db.Model(&entryRow{}).Where("id = ?", id).Updates(fields).Error
+}
+
+// EntryExists 確認 entry 是否存在。
+func (s *Store) EntryExists(id string) (bool, error) {
+	var count int64
+	err := s.db.Model(&entryRow{}).Where("id = ?", id).Count(&count).Error
+	return count > 0, err
+}
+
+// DeleteEntry 刪除一筆條目。
+func (s *Store) DeleteEntry(id string) error {
+	return s.db.Where("id = ?", id).Delete(&entryRow{}).Error
 }
 
 // GetEntry 依 ID 取單一條目;查無回 ErrNotFound。

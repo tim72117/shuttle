@@ -43,35 +43,34 @@ func newEntryID() string {
 	return "ent_" + hex.EncodeToString(b)
 }
 
-// RecordInput 是記錄一筆條目的輸入。時間為已換算好的絕對字串
-// ('YYYY-MM-DD' 或 'YYYY-MM-DD HH:MM');日期語詞換算由呼叫端(工具/CLI)先做。
+// RecordInput 是記錄一筆條目的輸入。
 type RecordInput struct {
 	ChannelID string
 	Item      string
-	Start     string // 可空(無時間 entry)
-	End       string // 可空
+	Start     string // 'YYYY-MM-DD';可空
+	StartTime string // 'HH:MM';空=全日
+	End       string // 'YYYY-MM-DD';可空
+	EndTime   string // 'HH:MM';可空
 	Location  string // 可空
 }
 
 // RecordResult 是記錄結果:新 entry 與時間重疊的候選行程(供呼叫端判斷歸入)。
 type RecordResult struct {
 	EntryID    string       `json:"entryID"`
-	AllDay     bool         `json:"allDay"`
 	Candidates []model.Trip `json:"candidates"` // 時間重疊的既有 trip;空代表無候選
 }
 
 // Record 寫入一筆 entry(tripID 留空,不自動歸組),回傳候選行程。
-// 全日 = 有日期但沒時刻(start 只有 10 字 'YYYY-MM-DD')。
 func (s *Service) Record(in RecordInput) (RecordResult, error) {
-	allDay := len(in.Start) == 10
 	id := newEntryID()
 	e := model.Entry{
 		ID:        id,
 		ChannelID: in.ChannelID,
 		Item:      in.Item,
 		Start:     in.Start,
+		StartTime: in.StartTime,
 		End:       in.End,
-		AllDay:    allDay,
+		EndTime:   in.EndTime,
 		Location:  in.Location,
 		CreatedAt: nowUTC(),
 	}
@@ -107,7 +106,7 @@ func (s *Service) Record(in RecordInput) (RecordResult, error) {
 	if cands == nil {
 		cands = []model.Trip{}
 	}
-	return RecordResult{EntryID: id, AllDay: allDay, Candidates: cands}, nil
+	return RecordResult{EntryID: id, Candidates: cands}, nil
 }
 
 // AddToTrip 把 entry 歸入指定 trip;tripID 留空則以該 entry 的時間/標題新建 trip。
@@ -153,19 +152,21 @@ func (s *Service) FindCandidates(channelID, start, end string) ([]model.Trip, er
 
 // UpdateEntryInput 是更新條目的輸入，留空欄位不更新。
 type UpdateEntryInput struct {
-	ID       string
-	Item     string
-	Start    string
-	End      string
-	Location string
-	Summary  string
-	Kind     string
-	Detail   map[string]any
+	ID        string
+	Item      string
+	Start     string
+	StartTime string
+	End       string
+	EndTime   string
+	Location  string
+	Summary   string
+	Kind      string
+	Detail    map[string]any
 }
 
 // UpdateEntry 更新一筆 entry 的可編輯欄位。
 func (s *Service) UpdateEntry(in UpdateEntryInput) error {
-	return s.st.UpdateEntry(in.ID, in.Item, in.Start, in.End, in.Location, in.Summary, in.Kind, in.Detail)
+	return s.st.UpdateEntry(in.ID, in.Item, in.Start, in.StartTime, in.End, in.EndTime, in.Location, in.Summary, in.Kind, in.Detail)
 }
 
 // DeleteTrip 刪除單一行程(解除底下 entries 的 tripID,不刪 entries 本身)。

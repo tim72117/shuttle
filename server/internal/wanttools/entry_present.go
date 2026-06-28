@@ -12,12 +12,8 @@ func init() {
 	})
 }
 
-// PresentEntriesDeclaration 是給 LLM 看的工具宣告。
-// 把「要展示給使用者的一筆條目」輸出,前端用條目卡片顯示。
-// 一次只傳一筆;要展示多筆就多次呼叫(multi tool call),參數刻意扁平,
-// 小模型容易正確填寫(對齊 record_entry 的扁平參數)。
 var PresentEntriesDeclaration = types.ToolDeclaration{
-	Name: "present_entries",
+	Name: "entry_present",
 	Description: "把一筆要展示給使用者的條目加入展示清單。" +
 		"回答查詢、列出安排/待辦/行程時,每一筆條目呼叫一次此工具(有幾筆就呼叫幾次)," +
 		"前端會把這些條目用卡片列表顯示,比純文字更清楚。",
@@ -31,15 +27,19 @@ var PresentEntriesDeclaration = types.ToolDeclaration{
 			},
 			"start": map[string]interface{}{
 				"type":        "STRING",
-				"description": "開始時間,'YYYY-MM-DD HH:MM' 或全日 'YYYY-MM-DD'。直接用查到的條目時間,不要自己換算。",
+				"description": "開始日期 'YYYY-MM-DD'。直接用查到的條目值。",
+			},
+			"startTime": map[string]interface{}{
+				"type":        "STRING",
+				"description": "開始時刻 'HH:MM'。全日事件留空字串。",
 			},
 			"end": map[string]interface{}{
 				"type":        "STRING",
-				"description": "結束時間,格式同 start;無則留空字串。",
+				"description": "結束日期 'YYYY-MM-DD';無則留空字串。",
 			},
-			"allDay": map[string]interface{}{
-				"type":        "BOOLEAN",
-				"description": "是否為全日事件。",
+			"endTime": map[string]interface{}{
+				"type":        "STRING",
+				"description": "結束時刻 'HH:MM';無則留空字串。",
 			},
 		},
 		"required": []string{"item"},
@@ -50,42 +50,39 @@ type PresentEntriesTool struct {
 	types.BaseToolConfig
 }
 
-// Call 把一筆展示條目加入清單:回傳 []ResultContentBlock(want 新規格),
-// 結果 map 以 ctx.EmitToolResult 發送。
-func (t *PresentEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]types.ResultContentBlock, error) {
-	// 一次一筆;多筆由 agent 多次呼叫(multi tool call),addPresented 累積成清單。
-	e := PresentedEntry{
-		Item:   args.GetString("item"),
-		Start:  args.GetString("start"),
-		End:    args.GetString("end"),
-		AllDay: args.GetBool("allDay"),
-	}
-	addPresented([]PresentedEntry{e})
-
-	summary := fmt.Sprintf("已加入展示:%s", e.Item)
-	ctx.EmitToolResult(map[string]interface{}{"summary": summary})
-	return []types.ResultContentBlock{types.TextBlock(summary)}, nil
-}
-
-// ValidateInput 在執行前驗證:item 不可為空(扁平參數,同 record_entry)。
 func (t *PresentEntriesTool) ValidateInput(args types.ToolArguments, _ types.ToolContext) error {
 	if args.GetString("item") == "" {
-		return fmt.Errorf("item 不可為空")
+		return fmt.Errorf("item is required")
 	}
 	return nil
 }
 
+func (t *PresentEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]types.ResultContentBlock, error) {
+	e := PresentedEntry{
+		Item:      args.GetString("item"),
+		Start:     args.GetString("start"),
+		StartTime: args.GetString("startTime"),
+		End:       args.GetString("end"),
+		EndTime:   args.GetString("endTime"),
+	}
+	addPresented([]PresentedEntry{e})
+
+	summary := fmt.Sprintf("Added to display: %s", e.Item)
+	ctx.EmitToolResult(map[string]interface{}{"summary": summary})
+	return []types.ResultContentBlock{types.TextBlock(summary)}, nil
+}
+
 func (t *PresentEntriesTool) RenderToolUse(args types.ToolArguments) string {
-	return fmt.Sprintf("正在展示條目:%s", args.GetString("item"))
+	return fmt.Sprintf("Displaying entry: %s", args.GetString("item"))
 }
 
 func (t *PresentEntriesTool) RenderToolUseError(err error) string {
-	return fmt.Sprintf("展示條目失敗:%v", err)
+	return fmt.Sprintf("Failed to display entry: %v", err)
 }
 
 func (t *PresentEntriesTool) RenderToolResult(data map[string]interface{}) string {
 	if msg, ok := data["summary"].(string); ok {
 		return msg
 	}
-	return "已加入展示"
+	return "Entry added to display"
 }

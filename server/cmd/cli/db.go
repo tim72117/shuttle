@@ -30,9 +30,17 @@ type dbClient struct {
 
 func (c *dbClient) close() { c.st.Close() }
 
-func (c *dbClient) record(channelID, item, start, end, location string) (any, error) {
+func (c *dbClient) listChannels() (any, error) {
+	channels, err := c.st.ListAllChannels()
+	return map[string]any{"channels": channels}, err
+}
+
+func (c *dbClient) record(channelID, item, start, startTime, end, endTime, location string) (any, error) {
 	return c.svc.Record(tripsvc.RecordInput{
-		ChannelID: channelID, Item: item, Start: start, End: end, Location: location,
+		ChannelID: channelID, Item: item,
+		Start: start, StartTime: startTime,
+		End: end, EndTime: endTime,
+		Location: location,
 	})
 }
 
@@ -57,6 +65,10 @@ func (c *dbClient) candidates(channelID, start, end string) (any, error) {
 
 func (c *dbClient) updateEntry(in tripsvc.UpdateEntryInput) error {
 	return c.svc.UpdateEntry(in)
+}
+
+func (c *dbClient) deleteEntry(entryID string) error {
+	return c.st.DeleteEntry(entryID)
 }
 
 func (c *dbClient) deleteTrip(tripID string) error {

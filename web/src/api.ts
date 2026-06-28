@@ -242,8 +242,9 @@ export function semanticQuery(
 export interface PresentedEntry {
   item: string
   start: string
+  startTime: string
   end: string
-  allDay: boolean
+  endTime: string
 }
 
 // owner 統一輸入:LLM 自主判斷記錄事項或回答提問。
@@ -335,6 +336,6 @@ export function fetchPublicView(baseURL: string, token: string) {
   return fetch(`${baseURL}/v1/public/${encodeURIComponent(token)}`)
     .then(async (r) => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      return r.json() as Promise<{ channelID: string; trips: Trip[]; entries: Entry[] }>
+      return r.json() as Promise<{ channelID: string; channelName: string; entries: Entry[] }>
     })
 }

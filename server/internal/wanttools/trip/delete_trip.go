@@ -1,7 +1,8 @@
-package wanttools
+package trip
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/tim72117/want/types"
 )
@@ -26,35 +27,43 @@ type DeleteTripTool struct {
 	types.BaseToolConfig
 }
 
-func (t *DeleteTripTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]types.ResultContentBlock, error) {
-	if tripService == nil {
-		return nil, fmt.Errorf("行程服務未初始化")
-	}
+func (t *DeleteTripTool) ValidateInput(args types.ToolArguments, _ types.ToolContext) error {
 	tripID := args.GetString("tripID")
 	if tripID == "" {
-		return nil, fmt.Errorf("tripID 不可為空")
+		return fmt.Errorf("tripID is required")
 	}
+	if !strings.HasPrefix(tripID, "trip_") {
+		return fmt.Errorf("invalid tripID %q: must start with 'trip_'", tripID)
+	}
+	return nil
+}
+
+func (t *DeleteTripTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]types.ResultContentBlock, error) {
+	if tripService == nil {
+		return nil, fmt.Errorf("trip service not initialized")
+	}
+	tripID := args.GetString("tripID")
 	if err := tripService.DeleteTrip(tripID); err != nil {
-		return nil, fmt.Errorf("刪除行程失敗: %w", err)
+		return nil, fmt.Errorf("failed to delete trip: %w", err)
 	}
-	msg := fmt.Sprintf("已刪除行程 %s", tripID)
+	msg := fmt.Sprintf("Trip %s deleted", tripID)
 	ctx.EmitToolResult(map[string]interface{}{"message": msg, "tripID": tripID})
 	return []types.ResultContentBlock{types.TextBlock(msg)}, nil
 }
 
 func (t *DeleteTripTool) RenderToolUse(args types.ToolArguments) string {
-	return fmt.Sprintf("正在刪除行程 %s...", args.GetString("tripID"))
+	return fmt.Sprintf("Deleting trip %s...", args.GetString("tripID"))
 }
 
 func (t *DeleteTripTool) RenderToolUseError(err error) string {
-	return fmt.Sprintf("刪除行程失敗：%v", err)
+	return fmt.Sprintf("Failed to delete trip: %v", err)
 }
 
 func (t *DeleteTripTool) RenderToolResult(data map[string]interface{}) string {
 	if msg, ok := data["message"].(string); ok {
 		return msg
 	}
-	return "已刪除行程"
+	return "Trip deleted"
 }
 
 func init() {

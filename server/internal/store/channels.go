@@ -80,6 +80,33 @@ func (s *Store) GetChannelOwner(channelID string) (string, error) {
 	return cr.OwnerID, nil
 }
 
+// GetChannelName 回傳頻道名稱；頻道不存在回 ErrNotFound。
+func (s *Store) GetChannelName(channelID string) (string, error) {
+	var cr channelRow
+	err := s.db.Select("name").Where("id = ?", channelID).First(&cr).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	return cr.Name, nil
+}
+
+// ListAllChannels 回傳所有頻道(供 internal CLI 使用)。
+func (s *Store) ListAllChannels() ([]model.Channel, error) {
+	var rows []channelRow
+	err := s.db.Order("updated_at DESC").Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Channel, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, model.Channel{ID: r.ID, Name: r.Name, OwnerID: r.OwnerID, UpdatedAt: r.UpdatedAt})
+	}
+	return out, nil
+}
+
 // CountChannels 回傳頻道總數(seed 判斷資料庫是否為空用)。
 func (s *Store) CountChannels() (int, error) {
 	var n int64

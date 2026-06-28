@@ -59,9 +59,10 @@ export interface Entry {
   id: string
   channelID: string
   item: string // 事項描述
-  start: string // 'YYYY-MM-DD HH:MM' 或全日 'YYYY-MM-DD';可空
-  end?: string // 範圍結束;可空
-  allDay: boolean
+  start: string // 'YYYY-MM-DD';可空
+  startTime: string // 'HH:MM';空=全日
+  end?: string // 範圍結束日期;可空
+  endTime?: string // 範圍結束時刻;可空
   location?: string | null // 地點(可空);目前由人工/前端填,LLM 暫不自動抽取
   lat?: number | null
   lng?: number | null

@@ -31,12 +31,14 @@ import (
 
 // client 定義統一的操作介面，由 httpClient 或 dbClient 實作。
 type client interface {
-	record(channelID, item, start, end, location string) (any, error)
+	listChannels() (any, error)
+	record(channelID, item, start, startTime, end, endTime, location string) (any, error)
 	addToTrip(entryID, tripID, title string) (string, string, error)
 	listTrips(channelID string) (any, error)
 	tripEntries(channelID, tripID string) (any, error)
 	candidates(channelID, start, end string) (any, error)
 	updateEntry(in tripsvc.UpdateEntryInput) error
+	deleteEntry(entryID string) error
 	deleteTrip(tripID string) error
 	reset(channelID string) error
 }
@@ -84,8 +86,14 @@ func main() {
 	}
 
 	switch cmd {
-	case "record":
-		cmdRecord(c, args)
+	case "list-channels":
+		cmdListChannels(c)
+	case "entry-add":
+		cmdEntryAdd(c, args)
+	case "entry-update":
+		cmdEntryUpdate(c, args)
+	case "entry-delete":
+		cmdEntryDelete(c, args)
 	case "add-to-trip":
 		cmdAddToTrip(c, apiURL, args)
 	case "list-trips":
@@ -94,8 +102,6 @@ func main() {
 		cmdTripEntries(c, args)
 	case "candidates":
 		cmdCandidates(c, args)
-	case "update-entry":
-		cmdUpdateEntry(c, args)
 	case "delete-trip":
 		cmdDeleteTrip(c, args)
 	case "reset":
@@ -111,91 +117,36 @@ func main() {
 	}
 }
 
-func cmdRecord(c client, args []string) {
-	fs := flag.NewFlagSet("record", flag.ExitOnError)
+func cmdListChannels(c client) {
+	res, err := c.listChannels()
+	if err != nil {
+		fatal("list-channels: %v", err)
+	}
+	output(res)
+}
+
+func cmdEntryAdd(c client, args []string) {
+	fs := flag.NewFlagSet("entry-add", flag.ExitOnError)
 	channel := fs.String("channel", "", "頻道 ID（必填）")
 	item := fs.String("item", "", "事項描述（必填）")
-	start := fs.String("start", "", "開始時間 'YYYY-MM-DD' 或 'YYYY-MM-DD HH:MM'")
-	end := fs.String("end", "", "結束時間（區間 entry 用，如住宿）")
+	start := fs.String("start", "", "開始日期 'YYYY-MM-DD'")
+	startTime := fs.String("start-time", "", "開始時刻 'HH:MM'")
+	end := fs.String("end", "", "結束日期 'YYYY-MM-DD'（區間用）")
+	endTime := fs.String("end-time", "", "結束時刻 'HH:MM'")
 	location := fs.String("location", "", "地點")
 	_ = fs.Parse(args)
 	if *channel == "" || *item == "" {
-		fatal("record 需要 -channel 與 -item")
+		fatal("entry-add 需要 -channel 與 -item")
 	}
-	res, err := c.record(*channel, *item, *start, *end, *location)
+	res, err := c.record(*channel, *item, *start, *startTime, *end, *endTime, *location)
 	if err != nil {
-		fatal("record: %v", err)
+		fatal("entry-add: %v", err)
 	}
 	output(res)
 }
 
-func cmdAddToTrip(c client, apiURL string, args []string) {
-	fs := flag.NewFlagSet("add-to-trip", flag.ExitOnError)
-	entry := fs.String("entry", "", "entry ID（必填）")
-	trip := fs.String("trip", "", "trip ID（留空則新建）")
-	title := fs.String("title", "", "新建 trip 時的行程名")
-	_ = fs.Parse(args)
-	if *entry == "" {
-		fatal("add-to-trip 需要 -entry")
-	}
-	tripID, channelID, err := c.addToTrip(*entry, *trip, *title)
-	if err != nil {
-		fatal("add-to-trip: %v", err)
-	}
-	// DB 模式需手動 notify；HTTP 模式 server 端已自動廣播
-	if channelID != "" {
-		notifyChannel(channelID, apiURL)
-	}
-	output(map[string]string{"entryID": *entry, "tripID": tripID})
-}
-
-func cmdListTrips(c client, args []string) {
-	fs := flag.NewFlagSet("list-trips", flag.ExitOnError)
-	channel := fs.String("channel", "", "頻道 ID（必填）")
-	_ = fs.Parse(args)
-	if *channel == "" {
-		fatal("list-trips 需要 -channel")
-	}
-	res, err := c.listTrips(*channel)
-	if err != nil {
-		fatal("list-trips: %v", err)
-	}
-	output(res)
-}
-
-func cmdTripEntries(c client, args []string) {
-	fs := flag.NewFlagSet("trip-entries", flag.ExitOnError)
-	channel := fs.String("channel", "", "頻道 ID（必填）")
-	trip := fs.String("trip", "", "trip ID（必填）")
-	_ = fs.Parse(args)
-	if *channel == "" || *trip == "" {
-		fatal("trip-entries 需要 -channel 與 -trip")
-	}
-	res, err := c.tripEntries(*channel, *trip)
-	if err != nil {
-		fatal("trip-entries: %v", err)
-	}
-	output(res)
-}
-
-func cmdCandidates(c client, args []string) {
-	fs := flag.NewFlagSet("candidates", flag.ExitOnError)
-	channel := fs.String("channel", "", "頻道 ID（必填）")
-	start := fs.String("start", "", "開始時間（必填）")
-	end := fs.String("end", "", "結束時間")
-	_ = fs.Parse(args)
-	if *channel == "" || *start == "" {
-		fatal("candidates 需要 -channel 與 -start")
-	}
-	res, err := c.candidates(*channel, *start, *end)
-	if err != nil {
-		fatal("candidates: %v", err)
-	}
-	output(res)
-}
-
-func cmdUpdateEntry(c client, args []string) {
-	fs := flag.NewFlagSet("update-entry", flag.ExitOnError)
+func cmdEntryUpdate(c client, args []string) {
+	fs := flag.NewFlagSet("entry-update", flag.ExitOnError)
 	id := fs.String("entry", "", "entry ID（必填）")
 	item := fs.String("item", "", "事項描述")
 	start := fs.String("start", "", "開始時間")
@@ -206,7 +157,7 @@ func cmdUpdateEntry(c client, args []string) {
 	detail := fs.String("detail", "", "kind 專屬細節（JSON 字串）")
 	_ = fs.Parse(args)
 	if *id == "" {
-		fatal("update-entry 需要 -entry")
+		fatal("entry-update 需要 -entry")
 	}
 	var detailMap map[string]any
 	if *detail != "" {
@@ -218,22 +169,22 @@ func cmdUpdateEntry(c client, args []string) {
 		ID: *id, Item: *item, Start: *start, End: *end, Location: *location,
 		Summary: *summary, Kind: *kind, Detail: detailMap,
 	}); err != nil {
-		fatal("update-entry: %v", err)
+		fatal("entry-update: %v", err)
 	}
 	output(map[string]string{"updated": *id})
 }
 
-func cmdDeleteTrip(c client, args []string) {
-	fs := flag.NewFlagSet("delete-trip", flag.ExitOnError)
-	trip := fs.String("trip", "", "trip ID（必填）")
+func cmdEntryDelete(c client, args []string) {
+	fs := flag.NewFlagSet("entry-delete", flag.ExitOnError)
+	id := fs.String("entry", "", "entry ID（必填）")
 	_ = fs.Parse(args)
-	if *trip == "" {
-		fatal("delete-trip 需要 -trip")
+	if *id == "" {
+		fatal("entry-delete 需要 -entry")
 	}
-	if err := c.deleteTrip(*trip); err != nil {
-		fatal("delete-trip: %v", err)
+	if err := c.deleteEntry(*id); err != nil {
+		fatal("entry-delete: %v", err)
 	}
-	output(map[string]string{"deleted": *trip})
+	output(map[string]string{"deleted": *id})
 }
 
 func cmdReset(c client, args []string) {

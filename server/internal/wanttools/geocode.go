@@ -30,12 +30,15 @@ type GeocodeTool struct {
 	types.BaseToolConfig
 }
 
+func (t *GeocodeTool) ValidateInput(args types.ToolArguments, _ types.ToolContext) error {
+	if args.GetString("place") == "" {
+		return fmt.Errorf("place is required")
+	}
+	return nil
+}
+
 func (t *GeocodeTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]types.ResultContentBlock, error) {
 	place := args.GetString("place")
-	if place == "" {
-		return nil, fmt.Errorf("place 不可為空")
-	}
-
 	apiKey := os.Getenv("GOOGLE_PLACES_API_KEY")
 	client := geo.New(apiKey)
 
@@ -44,11 +47,11 @@ func (t *GeocodeTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]t
 
 	places, err := client.Search(gctx, place, &geo.SearchOptions{MaxResults: 1})
 	if err != nil {
-		return nil, fmt.Errorf("geocode 查詢失敗: %w", err)
+		return nil, fmt.Errorf("geocode failed: %w", err)
 	}
 
 	p := places[0]
-	msg := fmt.Sprintf("📍 %s\n地址：%s\n座標：%.6f, %.6f", p.Name, p.Address, p.Lat, p.Lng)
+	msg := fmt.Sprintf("Location: %s\nAddress: %s\nCoordinates: %.6f, %.6f", p.Name, p.Address, p.Lat, p.Lng)
 	ctx.EmitToolResult(map[string]interface{}{
 		"name":    p.Name,
 		"address": p.Address,
@@ -59,11 +62,11 @@ func (t *GeocodeTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]t
 }
 
 func (t *GeocodeTool) RenderToolUse(args types.ToolArguments) string {
-	return fmt.Sprintf("正在查詢地點「%s」的座標...", args.GetString("place"))
+	return fmt.Sprintf("Looking up coordinates for %q...", args.GetString("place"))
 }
 
 func (t *GeocodeTool) RenderToolUseError(err error) string {
-	return fmt.Sprintf("地點查詢失敗：%v", err)
+	return fmt.Sprintf("Failed to geocode location: %v", err)
 }
 
 func (t *GeocodeTool) RenderToolResult(data map[string]interface{}) string {

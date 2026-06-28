@@ -18,9 +18,9 @@ type PublicLink struct {
 
 // PublicLinkResponse 公開訪問的回應結構
 type PublicLinkResponse struct {
-	Channel Channel   `json:"channel"`
-	Trips   []Trip    `json:"trips"`
-	Entries []Entry   `json:"entries"`
+	Channel Channel `json:"channel"`
+	Trips   []Trip  `json:"trips"`
+	Entries []Entry `json:"entries"`
 }
 
 // ChannelShare 是頻道分享記錄（已棄用，保留以相容性）
@@ -35,20 +35,20 @@ type ChannelShare struct {
 	CreatedBy string `json:"createdBy"` // 頻道 owner/editor
 
 	// 分享連結
-	ShareToken string `json:"shareToken" gorm:"uniqueIndex"`      // 短 token
-	ShareURL   string `json:"shareURL"`                            // 完整 URL
+	ShareToken string `json:"shareToken" gorm:"uniqueIndex"` // 短 token
+	ShareURL   string `json:"shareURL"`                      // 完整 URL
 
 	// 過期控制
 	ExpiresAt *time.Time `json:"expiresAt,omitempty" gorm:"index"` // null = 永不過期
 	IsActive  bool       `json:"isActive"`                         // 可手動停用
 
 	// 訪問控制
-	RequireAuth    bool    `json:"requireAuth"`            // 是否需要登入
+	RequireAuth     bool         `json:"requireAuth"`     // 是否需要登入
 	AccessibleRoles *StringArray `json:"accessibleRoles"` // JSON: ["editor", "viewer"] 或 nil (所有人)
 
 	// 統計
-	ViewCount       int        `json:"viewCount"`
-	LastAccessedAt  *time.Time `json:"lastAccessedAt,omitempty"`
+	ViewCount      int        `json:"viewCount"`
+	LastAccessedAt *time.Time `json:"lastAccessedAt,omitempty"`
 
 	// 時間戳
 	CreatedAt time.Time `json:"createdAt"`
@@ -67,7 +67,7 @@ type ChannelShareAccessLog struct {
 	UserAgent string  `json:"userAgent,omitempty"`
 
 	// 訪問詳情
-	AccessedAt     time.Time `json:"accessedAt"`
+	AccessedAt      time.Time `json:"accessedAt"`
 	DurationSeconds *int      `json:"durationSeconds,omitempty"`
 }
 
@@ -88,15 +88,15 @@ func (a *StringArray) Scan(value interface{}) error {
 
 // ChannelShareResponse 是公開分享頁面的回應結構
 type ChannelShareResponse struct {
-	Channel    Channel    `json:"channel"`
-	Trips      []Trip     `json:"trips"`
-	Entries    []Entry    `json:"entries"`
-	ShareInfo  ShareInfo  `json:"shareInfo"`
+	Channel   Channel   `json:"channel"`
+	Trips     []Trip    `json:"trips"`
+	Entries   []Entry   `json:"entries"`
+	ShareInfo ShareInfo `json:"shareInfo"`
 }
 
 // ShareInfo 分享信息
 type ShareInfo struct {
-	SharedBy  string     `json:"sharedBy"`  // 分享者名稱（不含 ID）
+	SharedBy  string     `json:"sharedBy"` // 分享者名稱（不含 ID）
 	SharedAt  time.Time  `json:"sharedAt"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }

@@ -1,4 +1,4 @@
-package wanttools
+package trip
 
 import (
 	"fmt"
@@ -24,20 +24,20 @@ type ListTripsTool struct {
 
 func (t *ListTripsTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]types.ResultContentBlock, error) {
 	if tripService == nil {
-		return nil, fmt.Errorf("行程服務未初始化")
+		return nil, fmt.Errorf("trip service not initialized")
 	}
-	trips, err := tripService.ListTrips(CurrentChannel())
+	trips, err := tripService.ListTrips(currentChannel())
 	if err != nil {
-		return nil, fmt.Errorf("查詢行程失敗: %w", err)
+		return nil, fmt.Errorf("failed to list trips: %w", err)
 	}
 	if len(trips) == 0 {
-		msg := "目前沒有任何行程"
+		msg := "No trips found"
 		ctx.EmitToolResult(map[string]interface{}{"message": msg, "trips": []interface{}{}})
 		return []types.ResultContentBlock{types.TextBlock(msg)}, nil
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("共 %d 個行程：\n", len(trips)))
+	sb.WriteString(fmt.Sprintf("%d trip(s):\n", len(trips)))
 	tripList := make([]map[string]interface{}, 0, len(trips))
 	for _, tr := range trips {
 		rng := tr.Start
@@ -58,18 +58,18 @@ func (t *ListTripsTool) Call(args types.ToolArguments, ctx types.ToolContext) ([
 }
 
 func (t *ListTripsTool) RenderToolUse(_ types.ToolArguments) string {
-	return "正在列出行程..."
+	return "Listing trips..."
 }
 
 func (t *ListTripsTool) RenderToolUseError(err error) string {
-	return fmt.Sprintf("列出行程失敗：%v", err)
+	return fmt.Sprintf("Failed to list trips: %v", err)
 }
 
 func (t *ListTripsTool) RenderToolResult(data map[string]interface{}) string {
 	if msg, ok := data["message"].(string); ok {
 		return msg
 	}
-	return "已取得行程清單"
+	return "Trips listed"
 }
 
 func init() {

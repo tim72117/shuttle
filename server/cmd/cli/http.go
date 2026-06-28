@@ -48,9 +48,14 @@ func (c *httpClient) do(method, path string, body any) (map[string]any, error) {
 	return result, nil
 }
 
-func (c *httpClient) record(channelID, item, start, end, location string) (any, error) {
+func (c *httpClient) listChannels() (any, error) {
+	return c.do("GET", "/internal/channels", nil)
+}
+
+func (c *httpClient) record(channelID, item, start, startTime, end, endTime, location string) (any, error) {
 	return c.do("POST", "/internal/channels/"+channelID+"/entries", map[string]any{
-		"item": item, "start": start, "end": end, "location": location,
+		"item": item, "start": start, "startTime": startTime,
+		"end": end, "endTime": endTime, "location": location,
 	})
 }
 
@@ -85,6 +90,11 @@ func (c *httpClient) updateEntry(in tripsvc.UpdateEntryInput) error {
 		"location": in.Location, "summary": in.Summary,
 		"kind": in.Kind, "detail": in.Detail,
 	})
+	return err
+}
+
+func (c *httpClient) deleteEntry(entryID string) error {
+	_, err := c.do("DELETE", "/internal/entries/"+entryID, nil)
 	return err
 }
 

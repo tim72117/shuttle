@@ -15,9 +15,9 @@ import (
 
 func cmdGeocode(args []string) {
 	fs := flag.NewFlagSet("geocode", flag.ExitOnError)
-	place   := fs.String("place", "", "地點名稱（必填）")
-	region  := fs.String("region", "", "國家代碼限制，如 jp / tw / cn（可選）")
-	maxN    := fs.Int("n", 1, "回傳候選筆數（1-5，預設 1）")
+	place := fs.String("place", "", "地點名稱（必填）")
+	region := fs.String("region", "", "國家代碼限制，如 jp / tw / cn（可選）")
+	maxN := fs.Int("n", 1, "回傳候選筆數（1-5，預設 1）")
 	entryID := fs.String("entry", "", "寫入座標的 entry ID（指定時取第一筆自動寫入）")
 	apiURLFlag := fs.String("api", "http://localhost:8080", "server URL")
 	_ = fs.Parse(args)
@@ -64,9 +64,9 @@ func cmdGeocode(args []string) {
 	}
 
 	output(map[string]any{
-		"query":     *place,
-		"region":    *region,
-		"entryID":   *entryID,
+		"query":      *place,
+		"region":     *region,
+		"entryID":    *entryID,
 		"candidates": places,
 	})
 }

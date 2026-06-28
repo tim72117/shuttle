@@ -76,9 +76,9 @@ func (s *Server) handlePublicView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trips, err := s.store.ListTripsByChannel(channelID)
+	channelName, err := s.store.GetChannelName(channelID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "trips_failed", err.Error())
+		writeErr(w, http.StatusInternalServerError, "channel_failed", err.Error())
 		return
 	}
 	entries, err := s.store.ListEntriesByChannel(channelID)
@@ -86,12 +86,9 @@ func (s *Server) handlePublicView(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "entries_failed", err.Error())
 		return
 	}
-	if trips == nil {
-		trips = nil
-	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"channelID": channelID,
-		"trips":     trips,
-		"entries":   entries,
+		"channelID":   channelID,
+		"channelName": channelName,
+		"entries":     entries,
 	})
 }
