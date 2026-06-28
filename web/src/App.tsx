@@ -869,7 +869,7 @@ function buildTLRows(entries: Entry[]): TLRow[] {
 
 // ---- 純渲染元件 ----
 
-function MultiTrackTimeline({ entries, todayRef }: { entries: Entry[], todayRef?: React.RefObject<HTMLDivElement> }) {
+function MultiTrackTimeline({ entries, todayRef, onEntryClick }: { entries: Entry[], todayRef?: React.RefObject<HTMLDivElement>, onEntryClick?: (e: Entry) => void }) {
   const rows = buildTLRows(entries)
   const today = new Date().toISOString().slice(0, 10)
   let todayAttached = false
@@ -918,8 +918,8 @@ function MultiTrackTimeline({ entries, todayRef }: { entries: Entry[], todayRef?
             </div>
             {/* 卡片欄 */}
             <div className="tl-col-card">
-              {card?.kind === 'main' && <MainCard entry={card.entry} />}
-              {card?.kind === 'sub'  && <SubCard  entry={card.entry} />}
+              {card?.kind === 'main' && <MainCard entry={card.entry} onEntryClick={onEntryClick} />}
+              {card?.kind === 'sub'  && <SubCard  entry={card.entry} onEntryClick={onEntryClick} />}
               {card?.kind === 'end'  && <EndCard  entry={card.entry} />}
             </div>
           </div>
@@ -951,10 +951,11 @@ function NavButton({ location, lat, lng }: { location: string; lat?: number | nu
   )
 }
 
-function MainCard({ entry }: { entry: Entry }) {
+function MainCard({ entry, onEntryClick }: { entry: Entry; onEntryClick?: (e: Entry) => void }) {
   const [open, setOpen] = useState(false)
+  const handleClick = () => onEntryClick ? onEntryClick(entry) : setOpen(o => !o)
   return (
-    <div className="tl-main-card tl-card-row" onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer' }}>
+    <div className="tl-main-card tl-card-row" onClick={handleClick} style={{ cursor: 'pointer' }}>
       <div className="tl-card-content">
         <div className="tl-item">
           <span className="tl-main-title">{entry.item}</span>
@@ -987,13 +988,14 @@ function EndCard({ entry }: { entry: Entry }) {
   )
 }
 
-function SubCard({ entry }: { entry: Entry }) {
+function SubCard({ entry, onEntryClick }: { entry: Entry; onEntryClick?: (e: Entry) => void }) {
   const [open, setOpen] = useState(false)
   const time = entryTimeLabel(entry)
   const span = entrySpanLabel(entry)
+  const handleClick = () => onEntryClick ? onEntryClick(entry) : setOpen(o => !o)
   return (
     <div className={`tl-card tl-card-row${span ? ' tl-card-span' : ''}`}
-      onClick={() => setOpen(o => !o)}
+      onClick={handleClick}
       style={{ cursor: 'pointer' }}>
       <div className="tl-card-content">
         <div className="tl-item">
@@ -1303,6 +1305,7 @@ function PublicViewScreen({ token }: { token: string }) {
   const [loading, setLoading] = useState(true)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null)
   const todayRef = useRef<HTMLDivElement>(null as unknown as HTMLDivElement)
   const bodyRef = useRef<HTMLDivElement>(null)
 
@@ -1347,6 +1350,10 @@ function PublicViewScreen({ token }: { token: string }) {
     }
   }
 
+  if (selectedEntry) {
+    return <EntryDetailModal entry={selectedEntry} onBack={() => setSelectedEntry(null)} />
+  }
+
   return (
     <>
       <div className="navbar">
@@ -1360,7 +1367,7 @@ function PublicViewScreen({ token }: { token: string }) {
         {data && (
           data.entries.length === 0
             ? <div className="empty">此頻道尚無行程。</div>
-            : <MultiTrackTimeline entries={data.entries} todayRef={todayRef} />
+            : <MultiTrackTimeline entries={data.entries} todayRef={todayRef} onEntryClick={setSelectedEntry} />
         )}
       </div>
       {data?.editable && (

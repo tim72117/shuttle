@@ -28,6 +28,7 @@ body {
 
 /* ---- 正式網頁版面 ---- */
 .web-app {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100dvh;
