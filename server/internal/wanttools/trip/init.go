@@ -6,6 +6,7 @@ import (
 	"github.com/channel/server/internal/store"
 	"github.com/channel/server/internal/tripsvc"
 	"github.com/channel/server/internal/wanttools"
+	"github.com/tim72117/want/types"
 )
 
 var tripService *tripsvc.Service
@@ -15,7 +16,7 @@ func BindTripStore(s *store.Store) {
 	tripService = tripsvc.New(s, nil)
 }
 
-func currentChannel() string { return wanttools.CurrentChannel() }
+func currentChannel(ctx types.ToolContext) string { return wanttools.ChannelFrom(ctx) }
 
 func normalizeEntryID(id string) string {
 	if !strings.HasPrefix(id, "ent_") {

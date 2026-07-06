@@ -26,7 +26,7 @@ func (t *ListTripsTool) Call(args types.ToolArguments, ctx types.ToolContext) ([
 	if tripService == nil {
 		return nil, fmt.Errorf("trip service not initialized")
 	}
-	trips, err := tripService.ListTrips(currentChannel())
+	trips, err := tripService.ListTrips(currentChannel(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list trips: %w", err)
 	}

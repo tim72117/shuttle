@@ -1,10 +1,13 @@
 package wanttools
 
 import (
+	"errors"
 	"fmt"
-	"github.com/tim72117/want/types"
 	"strings"
 	"time"
+
+	"github.com/channel/server/internal/store"
+	"github.com/tim72117/want/types"
 )
 
 var UpdateEntryDeclaration = types.ToolDeclaration{
@@ -63,7 +66,7 @@ func normalizeEntryID(id string) string {
 	return id
 }
 
-func (t *UpdateEntryTool) ValidateInput(args types.ToolArguments, _ types.ToolContext) error {
+func (t *UpdateEntryTool) ValidateInput(args types.ToolArguments, ctx types.ToolContext) error {
 	entryID := normalizeEntryID(args.GetString("entryID"))
 	if entryID == "ent_" {
 		return fmt.Errorf("entryID is required")
@@ -71,11 +74,15 @@ func (t *UpdateEntryTool) ValidateInput(args types.ToolArguments, _ types.ToolCo
 	if entryStore == nil {
 		return fmt.Errorf("store not initialized")
 	}
-	exists, err := entryStore.EntryExists(entryID)
+	entry, err := entryStore.GetEntry(entryID)
 	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("entry %s not found; use query_entries to get the correct entryID", entryID)
+		}
 		return fmt.Errorf("failed to look up entry: %w", err)
 	}
-	if !exists {
+	// 條目必須屬於目前頻道:防止(誤帶或猜測的)entryID 跨頻道更新到別的頻道資料。
+	if wantChan := ChannelFrom(ctx); entry.ChannelID != wantChan {
 		return fmt.Errorf("entry %s not found; use query_entries to get the correct entryID", entryID)
 	}
 	return nil
@@ -83,6 +90,9 @@ func (t *UpdateEntryTool) ValidateInput(args types.ToolArguments, _ types.ToolCo
 
 func (t *UpdateEntryTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]types.ResultContentBlock, error) {
 	entryID := normalizeEntryID(args.GetString("entryID"))
+	// 更新前先通知前端:對應條目卡片切成「更新中」動畫。
+	// 更新完成後的 Notify(entries_updated) 會讓前端重抓並解除更新中狀態。
+	NotifyEntryUpdating(ChannelFrom(ctx), entryID)
 	now := time.Now()
 	startDate := resolveDate(args.GetString("start"), now)
 	err := entryStore.UpdateEntry(
@@ -100,7 +110,7 @@ func (t *UpdateEntryTool) Call(args types.ToolArguments, ctx types.ToolContext) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to update entry: %w", err)
 	}
-	Notify(CurrentChannel())
+	Notify(ChannelFrom(ctx))
 	msg := fmt.Sprintf("Entry %s updated", entryID)
 	ctx.EmitToolResult(map[string]interface{}{"message": msg, "entryID": entryID})
 	return []types.ResultContentBlock{types.TextBlock(msg)}, nil

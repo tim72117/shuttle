@@ -50,6 +50,12 @@ var RecordEntryDeclaration = types.ToolDeclaration{
 				"description": "事件結束的時刻,24 小時制 'HH:MM'。" +
 					"只有表達時刻範圍(如「三點到五點」)時才填,否則留空字串。",
 			},
+			"kind": map[string]interface{}{
+				"type": "STRING",
+				"description": "條目類型(可留空)。目前支援:'stay'(住宿)。" +
+					"選 'stay' 時必須同時提供 start(入住日)與 end(退房日);" +
+					"未給時刻時系統自動補 check-in 15:00 / check-out 11:00。",
+			},
 		},
 		"required": []string{"item"},
 	},
@@ -63,19 +69,25 @@ func (t *RecordEntryTool) ValidateInput(args types.ToolArguments, _ types.ToolCo
 	if args.GetString("item") == "" {
 		return fmt.Errorf("item is required")
 	}
-	return nil
+	// 委派給對應 kind 的策略做專屬欄位檢查(如 stay 需 start+end);
+	// 無 kind 或未知 kind 時視為通過。
+	return validateKind(args)
 }
 
 func (t *RecordEntryTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]types.ResultContentBlock, error) {
+	// 先套用 kind 專屬預設值(如 stay 補 check-in/out 時刻),再讀取欄位。
+	applyKindDefaults(args)
+
 	item := args.GetString("item")
+	kind := args.GetString("kind")
 	now := time.Now()
 	startDate := resolveDate(args.GetString("start"), now)
 	startTime := args.GetString("startTime")
 	endDate := resolveDate(args.GetString("end"), now)
 	endTime := args.GetString("endTime")
 
-	entryID, err := emit(RecordedEntry{
-		Item: item, Start: startDate, StartTime: startTime, End: endDate, EndTime: endTime,
+	entryID, err := emit(ChannelFrom(ctx), RecordedEntry{
+		Item: item, Start: startDate, StartTime: startTime, End: endDate, EndTime: endTime, Kind: kind,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save entry: %w", err)

@@ -373,9 +373,14 @@ function ChatScreen({
   const [messages, setMessages] = useState<ChatMessage[]>([])
   // Entry:LLM(record_entry 工具)從訊息解析出的條目,按 messageID 掛到對應訊息下方。
   const [entries, setEntries] = useState<Entry[]>([])
+  // updatingEntryIDs:目前正在被 entry_update 工具更新的條目 ID,對應卡片顯示「更新中」光影動畫。
+  // WS 收到 entry_updating 加入(並保證最短顯示 800ms),entries_updated(更新完成刷新)時清空。
+  const [updatingEntryIDs, setUpdatingEntryIDs] = useState<Set<string>>(new Set())
   const [draft, setDraft] = useState('')
   const [lastDraft, setLastDraft] = useState('')
   const [inputFocused, setInputFocused] = useState(false)
+  // ask_user:agent 缺資訊(如住宿退房日)時,透過 WS 推來的請求;非 null 時前端開對應 UI。
+  const [askUser, setAskUser] = useState<{ askType: string; prompt: string } | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   // 成員管理在頻道內開啟(對齊 iOS App 的聊天頁右上角入口)。
@@ -425,14 +430,41 @@ function ChatScreen({
     load()
   }, [load])
 
+  // updatingSince:記每個更新中 entryID 的起始時間,用來保證「更新中」動畫最短顯示 800ms
+  // (entry_update 後端很快完成,不設下限會一閃而過看不見)。
+  const updatingSinceRef = useRef<Map<string, number>>(new Map())
+  const MIN_UPDATING_MS = 800
+
   useEffect(() => {
     const base = cfg.baseURL.replace(/^http/, 'ws')
     const ws = new WebSocket(`${base}/v1/channels/${channel.id}/ws`)
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data)
-        if (msg.event === 'entries_updated') {
+        if (msg.event === 'entry_updating' && msg.entryID) {
+          // 條目開始更新:對應卡片亮起「更新中」動畫,並記錄起始時間。
+          updatingSinceRef.current.set(msg.entryID, Date.now())
+          setUpdatingEntryIDs((prev) => new Set(prev).add(msg.entryID))
+        } else if (msg.event === 'entries_updated') {
+          // 更新完成:重抓條目,並依最短顯示時間逐一解除「更新中」狀態。
           api.fetchEntries(cfg, channel.id).then(setEntries).catch(() => {})
+          const now = Date.now()
+          updatingSinceRef.current.forEach((since, id) => {
+            const elapsed = now - since
+            const clear = () => {
+              updatingSinceRef.current.delete(id)
+              setUpdatingEntryIDs((prev) => {
+                const next = new Set(prev)
+                next.delete(id)
+                return next
+              })
+            }
+            if (elapsed >= MIN_UPDATING_MS) clear()
+            else setTimeout(clear, MIN_UPDATING_MS - elapsed)
+          })
+        } else if (msg.event === 'ask_user' && msg.askType) {
+          // agent 缺資訊,請使用者透過 UI 補上;開對應輸入元件(目前支援 date)。
+          setAskUser({ askType: msg.askType, prompt: msg.prompt ?? '' })
         }
       } catch {}
     }
@@ -459,13 +491,14 @@ function ChatScreen({
   })
 
   // owner 用:統一輸入送進 assist,LLM 自主判斷記錄事項或回答提問。
-  const send = async () => {
-    const text = draft.trim()
+  // overrideText:由 ask_user 回填等場景直接指定送出內容(不從 draft 取)。
+  const send = async (overrideText?: string) => {
+    const text = (overrideText ?? draft).trim()
     if (!text) return
     setSending(true)
     setErr(null)
     setLastDraft(text)
-    setDraft('')
+    if (overrideText === undefined) setDraft('') // 只清使用者手打的草稿;ask_user 回填不動 draft
     // 立刻插入處理中佔位泡泡(海浪動畫);完成後就地替換、失敗則移除。
     const pendingID = `pending_${Date.now()}`
     const pending = mkLocalMsg(pendingID, ASSISTANT_ID, '', '')
@@ -613,7 +646,7 @@ function ChatScreen({
               {isOwner ? '在下方輸入記事，會依時間排列在這裡。' : '在下方查詢頻道內容。'}
             </div>
           ) : entries.length > 0 ? (
-            <MultiTrackTimeline entries={entries} todayRef={todayRef} />
+            <MultiTrackTimeline entries={entries} todayRef={todayRef} updatingIDs={updatingEntryIDs} />
           ) : null}
         </div>
 
@@ -646,7 +679,7 @@ function ChatScreen({
               onBlur={() => setInputFocused(false)}
             />
             <button
-              onClick={isOwner ? send : ask}
+              onClick={isOwner ? () => send() : ask}
               disabled={sending || !draft.trim()}
             >
               <Send size={16} strokeWidth={2} />
@@ -654,7 +687,63 @@ function ChatScreen({
           </div>
         </div>
       </div>
+      {askUser && (
+        <AskUserSheet
+          askType={askUser.askType}
+          prompt={askUser.prompt}
+          onCancel={() => setAskUser(null)}
+          onSubmit={(value) => {
+            setAskUser(null)
+            // 把使用者選的值當成一則新訊息送回,agent 靠對話歷史接上前文(缺哪筆住宿的退房日)。
+            send(value)
+          }}
+        />
+      )}
     </>
+  )
+}
+
+// AskUserSheet:agent 呼叫 ask_user 時,前端依 askType 開啟對應輸入 UI 的底部彈出面板。
+// 目前支援 askType='date'(日期選擇器);使用者選定後把值透過 onSubmit 送回(當成新訊息)。
+function AskUserSheet({
+  askType,
+  prompt,
+  onSubmit,
+  onCancel,
+}: {
+  askType: string
+  prompt: string
+  onSubmit: (value: string) => void
+  onCancel: () => void
+}) {
+  const [value, setValue] = useState('')
+  return (
+    <div className="ask-user-backdrop" onClick={onCancel}>
+      <div className="ask-user-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="ask-user-prompt">{prompt || '請補充資訊'}</div>
+        {askType === 'date' ? (
+          <input
+            className="ask-user-date"
+            type="date"
+            value={value}
+            autoFocus
+            onChange={(e) => setValue(e.target.value)}
+          />
+        ) : (
+          <div className="ask-user-unsupported">不支援的輸入類型：{askType}</div>
+        )}
+        <div className="ask-user-actions">
+          <button className="btn-secondary" onClick={onCancel}>取消</button>
+          <button
+            className="btn-primary"
+            disabled={!value}
+            onClick={() => value && onSubmit(value)}
+          >
+            確定
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -921,7 +1010,7 @@ function buildTLRows(entries: Entry[]): TLRow[] {
 
 // ---- 純渲染元件 ----
 
-function MultiTrackTimeline({ entries, todayRef }: { entries: Entry[], todayRef?: React.RefObject<HTMLDivElement> }) {
+function MultiTrackTimeline({ entries, todayRef, updatingIDs }: { entries: Entry[], todayRef?: React.RefObject<HTMLDivElement>, updatingIDs?: Set<string> }) {
   const rows = buildTLRows(entries)
   const today = new Date().toISOString().slice(0, 10)
   let todayAttached = false
@@ -970,8 +1059,8 @@ function MultiTrackTimeline({ entries, todayRef }: { entries: Entry[], todayRef?
             </div>
             {/* 卡片欄 */}
             <div className="tl-col-card">
-              {card?.kind === 'main' && <MainCard entry={card.entry} />}
-              {card?.kind === 'sub'  && <SubCard  entry={card.entry} />}
+              {card?.kind === 'main' && <MainCard entry={card.entry} updating={updatingIDs?.has(card.entry.id)} />}
+              {card?.kind === 'sub'  && <SubCard  entry={card.entry} updating={updatingIDs?.has(card.entry.id)} />}
               {card?.kind === 'end'  && <EndCard  entry={card.entry} />}
             </div>
           </div>
@@ -1003,10 +1092,10 @@ function NavButton({ location, lat, lng }: { location: string; lat?: number | nu
   )
 }
 
-function MainCard({ entry }: { entry: Entry }) {
+function MainCard({ entry, updating }: { entry: Entry; updating?: boolean }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="tl-main-card tl-card-row" onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer' }}>
+    <div className={`tl-main-card tl-card-row${updating ? ' updating' : ''}`} onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer' }}>
       <div className="tl-card-content">
         <div className="tl-item">
           <span className="tl-main-title">{entry.item}</span>
@@ -1039,12 +1128,12 @@ function EndCard({ entry }: { entry: Entry }) {
   )
 }
 
-function SubCard({ entry }: { entry: Entry }) {
+function SubCard({ entry, updating }: { entry: Entry; updating?: boolean }) {
   const [open, setOpen] = useState(false)
   const time = entryTimeLabel(entry)
   const span = entrySpanLabel(entry)
   return (
-    <div className={`tl-card tl-card-row${span ? ' tl-card-span' : ''}`}
+    <div className={`tl-card tl-card-row${span ? ' tl-card-span' : ''}${updating ? ' updating' : ''}`}
       onClick={() => setOpen(o => !o)}
       style={{ cursor: 'pointer' }}>
       <div className="tl-card-content">

@@ -42,6 +42,18 @@ func (s *Server) NotifyEntriesUpdated(channelID string) {
 	s.hub.Broadcast(channelID, map[string]any{"event": "entries_updated", "channelID": channelID})
 }
 
+// NotifyEntryUpdating 廣播 entry_updating(帶 entryID)給指定頻道的訂閱者(供 wanttools 呼叫),
+// 讓前端在工具更新該條目期間顯示「更新中」動畫。
+func (s *Server) NotifyEntryUpdating(channelID, entryID string) {
+	s.hub.Broadcast(channelID, map[string]any{"event": "entry_updating", "channelID": channelID, "entryID": entryID})
+}
+
+// NotifyAskUser 廣播 ask_user(帶 askType/prompt)給指定頻道的訂閱者(供 wanttools 呼叫),
+// 讓前端開啟對應 UI(如日期選擇器)請使用者補上缺失資訊。
+func (s *Server) NotifyAskUser(channelID, askType, prompt string) {
+	s.hub.Broadcast(channelID, map[string]any{"event": "ask_user", "channelID": channelID, "askType": askType, "prompt": prompt})
+}
+
 // Routes 註冊路由(Go 1.22+ 的方法+路徑樣式)。
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()

@@ -91,6 +91,11 @@ func main() {
 		// 獨立寫入),回傳新 entry ID。
 		wanttools.BindSink(func(channelID string, e wanttools.RecordedEntry) (string, error) {
 			id := "ent_" + randHex()
+			// kind 空字串存 nil(model.Entry.Kind 為 *string),非空才帶指標。
+			var kind *string
+			if e.Kind != "" {
+				kind = &e.Kind
+			}
 			// 寫入時不自動歸組(TripID 留 nil):record_entry 會列出時間相符的候選行程,
 			// 由 LLM 判斷後呼叫 add_to_trip 工具歸入(或新建)。
 			err := st.InsertEntry(model.Entry{
@@ -101,6 +106,7 @@ func main() {
 				StartTime: e.StartTime,
 				End:       e.End,
 				EndTime:   e.EndTime,
+				Kind:      kind,
 				CreatedAt: nowUTC(),
 			})
 			return id, err
@@ -113,6 +119,8 @@ func main() {
 	signer := auth.NewSigner(*jwtSecret, 30*24*time.Hour)
 	srv := api.New(st, analyzer, signer, *devMode)
 	wanttools.BindNotify(srv.NotifyEntriesUpdated)
+	wanttools.BindEntryUpdating(srv.NotifyEntryUpdating)
+	wanttools.BindAskUser(srv.NotifyAskUser)
 
 	dbKind := "sqlite:" + dsn
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {

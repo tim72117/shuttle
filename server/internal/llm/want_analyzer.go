@@ -21,7 +21,7 @@ import (
 // orchestrator 是事件驅動的:Submit 送出 prompt,透過 EventBus 收回應,
 // 這裡把它包成同步的「prompt → text」。
 type WantAnalyzer struct {
-	coord *wantorch.Orchestrator
+	orch *wantorch.Orchestrator
 	// orchestrator 共享單一 agent 狀態,序列化呼叫避免交錯。
 	mu sync.Mutex
 }
@@ -43,15 +43,15 @@ func NewWant() (*WantAnalyzer, error) {
 		AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
 	}
 
-	coord := wantorch.SetupWith(settings, "assistant")
-	coord.OnError(func(err error) {
+	orch := wantorch.SetupWith(settings, "assistant")
+	orch.OnError(func(err error) {
 		fmt.Printf("[want] 🔴 Agent Error: %v\n", err)
 	})
 
 	// 掛載各工具自帶的服務路由(同 web/server.go)。
 	wanttypes.MountServices()
 
-	return &WantAnalyzer{coord: coord}, nil
+	return &WantAnalyzer{orch: orch}, nil
 }
 
 // generate 送一個 prompt,收集本次推論的完整文字回應。
@@ -68,7 +68,7 @@ func (w *WantAnalyzer) generate(prompt string) (string, error) {
 	var once sync.Once
 	finish := func() { once.Do(func() { close(done) }) }
 
-	unsub := w.coord.EventBus.Subscribe("agent.inference", func(payload interface{}) {
+	unsub := w.orch.EventBus.Subscribe("agent.inference", func(payload interface{}) {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -97,7 +97,7 @@ func (w *WantAnalyzer) generate(prompt string) (string, error) {
 	})
 	defer unsub()
 
-	w.coord.Submit(prompt)
+	w.orch.Submit(prompt)
 
 	select {
 	case <-done:
@@ -143,8 +143,9 @@ func (w *WantAnalyzer) Assist(channelID, messageID, text string, linkMessage fun
 
 	wanttools.RecordLock()
 	defer wanttools.RecordUnlock()
-	wanttools.SetContext(messageID, channelID)
-	defer wanttools.ClearContext()
+	// 輔助資訊(channelID/messageID)透過 SessionEnvs 隨 ToolUseContext 傳遞給工具,
+	// 不進送給 LLM 的 prompt,也不經過任何套件級全域變數。
+	w.orch.SetSessionEnvs(map[string]string{"channelID": channelID, "messageID": messageID})
 
 	state := wantui.NewCommonInferenceState()
 	var mu sync.Mutex
@@ -153,7 +154,7 @@ func (w *WantAnalyzer) Assist(channelID, messageID, text string, linkMessage fun
 	var once sync.Once
 	finish := func() { once.Do(func() { close(done) }) }
 
-	unsub := w.coord.EventBus.Subscribe("agent.inference", func(payload interface{}) {
+	unsub := w.orch.EventBus.Subscribe("agent.inference", func(payload interface{}) {
 		mu.Lock()
 		defer mu.Unlock()
 		result, handled := wantui.HandleInferenceMessage(payload, state)
@@ -174,7 +175,7 @@ func (w *WantAnalyzer) Assist(channelID, messageID, text string, linkMessage fun
 	})
 	defer unsub()
 
-	w.coord.Submit(text)
+	w.orch.Submit(text)
 
 	select {
 	case <-done:
@@ -215,7 +216,7 @@ func (w *WantAnalyzer) Assist(channelID, messageID, text string, linkMessage fun
 // query_entries 查條目、再對每筆相關條目呼叫 present_entries 呈現
 // (不用 citeEntries 關鍵字比對,也不把 pool 塞進 prompt)。
 // 跑完用 Presented() 取 agent 呈現的結構化條目,確保卡片與文字來自同一判斷。
-// channelID 必填:query_entries 工具靠 SetContext 得知要查哪個頻道。
+// channelID 必填:query_entries 工具靠 SessionEnvs 得知要查哪個頻道。
 func (w *WantAnalyzer) Answer(channelID, question string) model.SearchAnswer {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -224,9 +225,8 @@ func (w *WantAnalyzer) Answer(channelID, question string) model.SearchAnswer {
 	// 跑完用 Presented() 取本次 agent 透過 present_entries 呈現的條目。
 	wanttools.RecordLock()
 	defer wanttools.RecordUnlock()
-	// 讓 query_entries 知道查哪個頻道(同 Assist 路徑;查詢不關聯 message,messageID 留空)。
-	wanttools.SetContext("", channelID)
-	defer wanttools.ClearContext()
+	// 讓 query_entries 知道查哪個頻道(同 Assist 路徑;查詢不關聯 message,故不設 messageID)。
+	w.orch.SetSessionEnvs(map[string]string{"channelID": channelID})
 
 	state := wantui.NewCommonInferenceState()
 	var mu sync.Mutex
@@ -235,7 +235,7 @@ func (w *WantAnalyzer) Answer(channelID, question string) model.SearchAnswer {
 	var once sync.Once
 	finish := func() { once.Do(func() { close(done) }) }
 
-	unsub := w.coord.EventBus.Subscribe("agent.inference", func(payload interface{}) {
+	unsub := w.orch.EventBus.Subscribe("agent.inference", func(payload interface{}) {
 		mu.Lock()
 		defer mu.Unlock()
 		result, handled := wantui.HandleInferenceMessage(payload, state)
@@ -256,7 +256,7 @@ func (w *WantAnalyzer) Answer(channelID, question string) model.SearchAnswer {
 	})
 	defer unsub()
 
-	w.coord.Submit(question)
+	w.orch.Submit(question)
 
 	select {
 	case <-done:

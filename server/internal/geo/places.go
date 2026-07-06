@@ -1,17 +1,23 @@
-// Package geo 封裝 Google Places API（Text Search），
+// Package geo 封裝 Google Places API (New)（Text Search），
 // 輸入地點名稱，回傳候選地點清單（含經緯度）。
 package geo
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"time"
 )
 
-const placesURL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+// 新版 Places API (New) 的 Text Search 端點(POST)。
+// 舊版為 maps.googleapis.com/maps/api/place/textsearch/json(GET),已於 2026 遷移至此。
+const placesURL = "https://places.googleapis.com/v1/places:searchText"
+
+// fieldMask 指定新版 API 要回傳哪些欄位(新版必填 header X-Goog-FieldMask,
+// 不給會回 400)。只取目前用到的:顯示名稱、格式化地址、經緯度。
+const fieldMask = "places.displayName,places.formattedAddress,places.location"
 
 // Client 持有 API key，提供地點查詢。
 type Client struct {
@@ -69,17 +75,27 @@ func (c *Client) Search(ctx context.Context, place string, opts *SearchOptions) 
 		region = opts.Region
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", placesURL, nil)
+	// 新版:參數放 JSON body。pageSize 對應舊版 MaxResults;
+	// regionCode 對應舊版 region(新版用大寫國碼,如 "JP")。
+	reqBody := map[string]any{
+		"textQuery": place,
+		"pageSize":  maxN,
+	}
+	if region != "" {
+		reqBody["regionCode"] = region
+	}
+	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, err
 	}
-	q := url.Values{}
-	q.Set("query", place)
-	q.Set("key", c.apiKey)
-	if region != "" {
-		q.Set("region", region)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", placesURL, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, err
 	}
-	req.URL.RawQuery = q.Encode()
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Goog-Api-Key", c.apiKey)
+	req.Header.Set("X-Goog-FieldMask", fieldMask)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -87,36 +103,50 @@ func (c *Client) Search(ctx context.Context, place string, opts *SearchOptions) 
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		// 新版錯誤 body 含 {"error":{"message":...}},取出便於排查(如 key 無權限、未啟用服務)。
+		var errBody struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&errBody)
+		if errBody.Error.Message != "" {
+			return nil, fmt.Errorf("geo: request failed (HTTP %d): %s", resp.StatusCode, errBody.Error.Message)
+		}
+		return nil, fmt.Errorf("geo: request failed (HTTP %d)", resp.StatusCode)
+	}
+
+	// 新版回應結構:places[].displayName.text / formattedAddress / location.{latitude,longitude}
 	var body struct {
-		Status  string `json:"status"`
-		Results []struct {
-			Name             string `json:"name"`
-			FormattedAddress string `json:"formatted_address"`
-			Geometry         struct {
-				Location struct {
-					Lat float64 `json:"lat"`
-					Lng float64 `json:"lng"`
-				} `json:"location"`
-			} `json:"geometry"`
-		} `json:"results"`
+		Places []struct {
+			DisplayName struct {
+				Text string `json:"text"`
+			} `json:"displayName"`
+			FormattedAddress string `json:"formattedAddress"`
+			Location         struct {
+				Latitude  float64 `json:"latitude"`
+				Longitude float64 `json:"longitude"`
+			} `json:"location"`
+		} `json:"places"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nil, fmt.Errorf("geo: decode failed: %w", err)
 	}
-	if body.Status != "OK" || len(body.Results) == 0 {
+	if len(body.Places) == 0 {
 		return nil, ErrNotFound
 	}
 
 	out := make([]Place, 0, maxN)
-	for i, r := range body.Results {
+	for i, p := range body.Places {
 		if i >= maxN {
 			break
 		}
 		out = append(out, Place{
-			Name:    r.Name,
-			Address: r.FormattedAddress,
-			Lat:     r.Geometry.Location.Lat,
-			Lng:     r.Geometry.Location.Lng,
+			Name:    p.DisplayName.Text,
+			Address: p.FormattedAddress,
+			Lat:     p.Location.Latitude,
+			Lng:     p.Location.Longitude,
 		})
 	}
 	return out, nil

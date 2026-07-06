@@ -9,25 +9,27 @@ func TestEmitWritesSynchronously(t *testing.T) {
 	defer RecordUnlock()
 
 	var written []RecordedEntry
+	var gotChannelID string
 	BindSink(func(channelID string, e RecordedEntry) (string, error) {
+		gotChannelID = channelID
 		written = append(written, e)
 		return "ent_" + e.Item, nil // 假 ID
 	})
 	t.Cleanup(func() { BindSink(nil) })
 
-	SetContext("msg_1", "ch_1")
-	defer ClearContext()
-
-	if _, err := emit(RecordedEntry{Item: "開會"}); err != nil {
+	if _, err := emit("ch_1", RecordedEntry{Item: "開會"}); err != nil {
 		t.Fatalf("emit: %v", err)
 	}
-	if _, err := emit(RecordedEntry{Item: "交報告"}); err != nil {
+	if _, err := emit("ch_1", RecordedEntry{Item: "交報告"}); err != nil {
 		t.Fatalf("emit: %v", err)
 	}
 
-	// emit 應「同步」寫入,當下 sink 就被呼叫。
+	// emit 應「同步」寫入,當下 sink 就被呼叫,且收到呼叫端傳入的 channelID。
 	if len(written) != 2 {
 		t.Fatalf("emit 應同步寫入 2 筆,實得 %d", len(written))
+	}
+	if gotChannelID != "ch_1" {
+		t.Fatalf("sink 收到的 channelID = %q, want %q", gotChannelID, "ch_1")
 	}
 	if EmitCount() != 2 {
 		t.Fatalf("EmitCount = %d, want 2", EmitCount())
@@ -46,10 +48,7 @@ func TestEmitNoSinkStillCounts(t *testing.T) {
 	defer RecordUnlock()
 	BindSink(nil)
 
-	SetContext("msg_x", "ch_x")
-	defer ClearContext()
-
-	if _, err := emit(RecordedEntry{Item: "x"}); err != nil {
+	if _, err := emit("ch_x", RecordedEntry{Item: "x"}); err != nil {
 		t.Fatalf("無 sink 時 emit 不應報錯: %v", err)
 	}
 	if EmitCount() != 1 {
@@ -67,14 +66,20 @@ func TestRecordLockResets(t *testing.T) {
 	t.Cleanup(func() { BindSink(nil) })
 
 	RecordLock()
-	SetContext("msg_a", "ch_a")
-	_, _ = emit(RecordedEntry{Item: "殘留"})
-	ClearContext()
+	_, _ = emit("ch_a", RecordedEntry{Item: "殘留"})
 	RecordUnlock()
 
 	RecordLock()
 	defer RecordUnlock()
 	if EmitCount() != 0 || len(EmittedIDs()) != 0 {
 		t.Fatalf("RecordLock 應清空計數與 ID, EmitCount=%d ids=%d", EmitCount(), len(EmittedIDs()))
+	}
+}
+
+// TestChannelFromNilOrEmptyCtx 驗證 ChannelFrom 在 ctx 為 nil 或無 SessionEnvs 時
+// 回空字串,不會 panic(呼叫端如 CLI 等尚未走完整 orchestrator 流程的路徑會遇到)。
+func TestChannelFromNilOrEmptyCtx(t *testing.T) {
+	if got := ChannelFrom(nil); got != "" {
+		t.Fatalf("ChannelFrom(nil) = %q, want empty", got)
 	}
 }

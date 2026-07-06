@@ -43,7 +43,7 @@ func (t *TripEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext) 
 		return nil, fmt.Errorf("trip service not initialized")
 	}
 	tripID := args.GetString("tripID")
-	entries, err := tripService.ListTripEntries(currentChannel(), tripID)
+	entries, err := tripService.ListTripEntries(currentChannel(ctx), tripID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list trip entries: %w", err)
 	}

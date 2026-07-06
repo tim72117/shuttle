@@ -76,8 +76,8 @@ func (t *QueryEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext)
 	if entryStore == nil {
 		return nil, fmt.Errorf("store 未初始化")
 	}
-	// channelID 取自當前記錄 context(agent 不需自己帶)。
-	entries, err := entryStore.ListEntriesByRange(CurrentChannel(), from, to)
+	// channelID 取自本次呼叫的 SessionEnvs(agent 不需自己帶)。
+	entries, err := entryStore.ListEntriesByRange(ChannelFrom(ctx), from, to)
 	if err != nil {
 		return nil, fmt.Errorf("查詢條目失敗: %w", err)
 	}
