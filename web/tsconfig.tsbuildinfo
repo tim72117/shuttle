@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/debugapp.tsx","./src/debugpanel.tsx","./src/api.ts","./src/devicedb.ts","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/chatscreen.tsx","./src/debugapp.tsx","./src/debugpanel.tsx","./src/landingpage.tsx","./src/timeline.tsx","./src/api.ts","./src/devicedb.ts","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts"],"version":"5.9.3"}

@@ -1,4 +1,4 @@
-# Channel Web — 後端開發測試台
+# Shuttle Web — 後端開發測試台
 
 套 iPhone 外框的 web app,**用途是開發時方便測試 Go 後端**(不是正式產品)。
 左側是像 app 的操作介面,右側是 debug panel,即時顯示每次 API 的原始
@@ -29,16 +29,22 @@ npm run dev      # → http://localhost:5173
 
 ## 涵蓋的端點
 
-對齊 `server/internal/api` 與 `docs/API.md` 全部路由:
+對齊 `server/internal/api`(實際呼叫見 `src/api.ts`):
 
 | 操作 | 端點 |
 |------|------|
-| 頻道列表 / 建立 | `GET/POST /v1/channels` |
-| 訊息列表 / 發送(LLM 標注) | `GET/POST /v1/channels/{id}/messages` |
-| 成員列表 / 邀請 | `GET/POST /v1/channels/{id}/members` |
-| 找使用者 | `GET /v1/users/search?q=` |
-| 語意查詢(RAG) | `POST /v1/channels/{id}/query` |
 | 健康檢查 | `GET /health` |
+| 登入 / 註冊 / Apple 登入 | `POST /v1/auth/login`、`/v1/auth/register`、`/v1/auth/apple` |
+| 自己的身分 | `GET /v1/me` |
+| 頻道列表 / 建立 | `GET/POST /v1/channels` |
+| 成員列表 / 邀請 / 改權限 | `GET/POST /v1/channels/{id}/members`、`PATCH .../members/{userID}` |
+| 記事或提問(LLM 判斷記錄/回答) | `POST /v1/channels/{id}/assist` |
+| 語意查詢(RAG) | `POST /v1/channels/{id}/query` |
+| 條目列表 / 清空頻道資料 | `GET /v1/channels/{id}/entries`、`DELETE /v1/channels/{id}` |
+| 行程列表 / 行程內條目 | `GET /v1/channels/{id}/trips`、`.../trips/{tripID}/entries` |
+| 即時更新(entry 更新中/完成、ask_user、task_plan 進度) | `WS /v1/channels/{id}/ws` |
+| 公開分享連結:建立 / 查詢 / 撤銷 | `POST/GET/DELETE /v1/channels/{id}/public-link` |
+| 公開分享頁(免登入):讀取 / 新增行程 | `GET /v1/public/{token}`、`POST /v1/public/{token}/assist` |
 
 ## 注意
 
@@ -51,9 +57,16 @@ npm run dev      # → http://localhost:5173
 
 ```
 src/
-├── types.ts       # 與後端對齊的 TS 型別
-├── api.ts         # API client(攔截每次交易,計時、擷取原始 JSON)
-├── App.tsx        # iPhone 殼 + 各頁面(頻道/聊天/成員/設定);聊天頁中 owner 發訊息、成員以自然語言查詢
-├── DebugPanel.tsx # 右側 debug panel
-└── styles.css     # iOS 風格樣式
+├── main.tsx         # 進入點,依 ?debug query 決定渲染 App 或 DebugApp
+├── App.tsx          # 路由分派(/、/public/{token}、其餘走測試台)+ iPhone 殼
+│                     # + 頻道列表/設定/登入頁 + 共用工具(Avatar/ErrorBanner/errMsg 等)
+├── ChatScreen.tsx    # 聊天頁(owner 發訊息、成員以自然語言查詢)+ 成員管理 + 分享彈窗
+├── Timeline.tsx      # 多軌時間軸渲染,ChatScreen 與公開分享頁共用
+├── LandingPage.tsx   # 產品介紹頁(根路徑 /)
+├── DebugApp.tsx      # ?debug 模式的替代進入點
+├── DebugPanel.tsx    # 右側 debug panel,即時顯示每次 API 的原始 request/response
+├── api.ts            # API client(攔截每次交易,計時、擷取原始 JSON)
+├── deviceDB.ts       # 裝置端訊息儲存(sql.js),與後端隔離
+├── types.ts          # 與後端對齊的 TS 型別
+└── styles.css        # iOS 風格樣式
 ```
