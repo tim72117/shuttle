@@ -112,7 +112,7 @@ func (w *WantAnalyzer) generate(prompt string) (string, error) {
 // AssistEntry 是 agent 用 present_entries 輸出、要展示給使用者的條目。
 // 與 wanttools.PresentedEntry 同形,但定義在 llm 層,讓 api 不需依賴 wanttools。
 type AssistEntry struct {
-	Item      string `json:"item"`
+	Title     string `json:"title"`
 	Start     string `json:"start"`
 	StartTime string `json:"startTime"`
 	End       string `json:"end"`
@@ -191,7 +191,7 @@ func (w *WantAnalyzer) Assist(channelID, messageID, text string, linkMessage fun
 	var presented []AssistEntry
 	for _, e := range wanttools.Presented() {
 		presented = append(presented, AssistEntry{
-			Item: e.Item, Start: e.Start, StartTime: e.StartTime, End: e.End, EndTime: e.EndTime,
+			Title: e.Title, Start: e.Start, StartTime: e.StartTime, End: e.End, EndTime: e.EndTime,
 		})
 	}
 
@@ -272,7 +272,7 @@ func (w *WantAnalyzer) Answer(channelID, question string) model.SearchAnswer {
 	var presented []model.PresentedEntry
 	for _, e := range wanttools.Presented() {
 		presented = append(presented, model.PresentedEntry{
-			Item: e.Item, Start: e.Start, StartTime: e.StartTime, End: e.End, EndTime: e.EndTime,
+			Title: e.Title, Start: e.Start, StartTime: e.StartTime, End: e.End, EndTime: e.EndTime,
 		})
 	}
 

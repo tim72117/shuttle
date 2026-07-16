@@ -13,14 +13,14 @@ func TestEmitWritesSynchronously(t *testing.T) {
 	BindSink(func(channelID string, e RecordedEntry) (string, error) {
 		gotChannelID = channelID
 		written = append(written, e)
-		return "ent_" + e.Item, nil // 假 ID
+		return "ent_" + e.Title, nil // 假 ID
 	})
 	t.Cleanup(func() { BindSink(nil) })
 
-	if _, err := emit("ch_1", RecordedEntry{Item: "開會"}); err != nil {
+	if _, err := emit("ch_1", RecordedEntry{Title: "開會"}); err != nil {
 		t.Fatalf("emit: %v", err)
 	}
-	if _, err := emit("ch_1", RecordedEntry{Item: "交報告"}); err != nil {
+	if _, err := emit("ch_1", RecordedEntry{Title: "交報告"}); err != nil {
 		t.Fatalf("emit: %v", err)
 	}
 
@@ -48,7 +48,7 @@ func TestEmitNoSinkStillCounts(t *testing.T) {
 	defer RecordUnlock()
 	BindSink(nil)
 
-	if _, err := emit("ch_x", RecordedEntry{Item: "x"}); err != nil {
+	if _, err := emit("ch_x", RecordedEntry{Title: "x"}); err != nil {
 		t.Fatalf("無 sink 時 emit 不應報錯: %v", err)
 	}
 	if EmitCount() != 1 {
@@ -66,7 +66,7 @@ func TestRecordLockResets(t *testing.T) {
 	t.Cleanup(func() { BindSink(nil) })
 
 	RecordLock()
-	_, _ = emit("ch_a", RecordedEntry{Item: "殘留"})
+	_, _ = emit("ch_a", RecordedEntry{Title: "殘留"})
 	RecordUnlock()
 
 	RecordLock()

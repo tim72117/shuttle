@@ -22,7 +22,7 @@ var UpdateEntryDeclaration = types.ToolDeclaration{
 				"type":        "STRING",
 				"description": "要更新的條目 ID（如 'ent_xxxx'）。",
 			},
-			"item": map[string]interface{}{
+			"title": map[string]interface{}{
 				"type":        "STRING",
 				"description": "新的事項描述，留空字串表示不修改。",
 			},
@@ -97,13 +97,13 @@ func (t *UpdateEntryTool) Call(args types.ToolArguments, ctx types.ToolContext) 
 	startDate := resolveDate(args.GetString("start"), now)
 	err := entryStore.UpdateEntry(
 		entryID,
-		args.GetString("item"),
+		args.GetString("title"),
 		startDate,
 		args.GetString("startTime"),
 		resolveDate(args.GetString("end"), now),
 		args.GetString("endTime"),
 		args.GetString("location"),
-		"", // summary
+		"", // note
 		args.GetString("kind"),
 		nil, // detail
 	)

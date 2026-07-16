@@ -491,7 +491,7 @@ function PresentedCard({ entry }: { entry: PresentedEntry }) {
     <div className="entry-card">
       <span className="entry-ico">📅</span>
       <div className="entry-body">
-        <div className="entry-item">{entry.item}</div>
+        <div className="entry-item">{entry.title}</div>
         <div className="entry-when">{when}{endLabel}</div>
       </div>
     </div>

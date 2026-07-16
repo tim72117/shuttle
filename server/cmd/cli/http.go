@@ -52,9 +52,9 @@ func (c *httpClient) listChannels() (any, error) {
 	return c.do("GET", "/internal/channels", nil)
 }
 
-func (c *httpClient) record(channelID, item, start, startTime, end, endTime, location string) (any, error) {
+func (c *httpClient) record(channelID, title, start, startTime, end, endTime, location string) (any, error) {
 	return c.do("POST", "/internal/channels/"+channelID+"/entries", map[string]any{
-		"item": item, "start": start, "startTime": startTime,
+		"title": title, "start": start, "startTime": startTime,
 		"end": end, "endTime": endTime, "location": location,
 	})
 }
@@ -86,8 +86,8 @@ func (c *httpClient) candidates(channelID, start, end string) (any, error) {
 
 func (c *httpClient) updateEntry(in tripsvc.UpdateEntryInput) error {
 	_, err := c.do("PATCH", "/internal/entries/"+in.ID, map[string]any{
-		"item": in.Item, "start": in.Start, "end": in.End,
-		"location": in.Location, "summary": in.Summary,
+		"title": in.Title, "start": in.Start, "end": in.End,
+		"location": in.Location, "note": in.Note,
 		"kind": in.Kind, "detail": in.Detail,
 	})
 	return err

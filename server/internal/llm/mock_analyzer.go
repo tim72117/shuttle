@@ -37,18 +37,18 @@ func NewMock(st *store.Store) *MockAnalyzer {
 //   - 看牙醫(範圍外 → 自成一個 Trip)
 //   - 買牛奶(無時間 → 不歸組)
 type scenario struct {
-	item     string
+	title    string
 	startDay int    // 距今天數;-1 表示無時間
 	endDay   int    // 距今天數;<0 表示無 end(單點)
 	clock    string // 'HH:MM';空表全日
 }
 
 var mockScenarios = []scenario{
-	{item: "東京住宿(新宿飯店)", startDay: 7, endDay: 10, clock: ""},     // 區間:7~10 天後
-	{item: "東京來回機票", startDay: 7, endDay: -1, clock: "09:30"},    // 落在住宿首日
-	{item: "與客戶開會討論合約", startDay: 8, endDay: -1, clock: "14:00"}, // 落在住宿範圍內
-	{item: "看牙醫", startDay: 30, endDay: -1, clock: "10:00"},      // 範圍外 → 自成 Trip
-	{item: "買牛奶", startDay: -1, endDay: -1, clock: ""},           // 無時間 → 不歸組
+	{title: "東京住宿(新宿飯店)", startDay: 7, endDay: 10, clock: ""},     // 區間:7~10 天後
+	{title: "東京來回機票", startDay: 7, endDay: -1, clock: "09:30"},    // 落在住宿首日
+	{title: "與客戶開會討論合約", startDay: 8, endDay: -1, clock: "14:00"}, // 落在住宿範圍內
+	{title: "看牙醫", startDay: 30, endDay: -1, clock: "10:00"},      // 範圍外 → 自成 Trip
+	{title: "買牛奶", startDay: -1, endDay: -1, clock: ""},           // 無時間 → 不歸組
 }
 
 func newEntryID() string {
@@ -90,7 +90,7 @@ func (m *MockAnalyzer) AssistForSession(_, channelID, _, _ string, _ func(entryI
 	if err := m.store.InsertEntry(model.Entry{
 		ID:        id,
 		ChannelID: channelID,
-		Item:      sc.item,
+		Title:     sc.title,
 		Start:     startDate,
 		StartTime: startTime,
 		End:       endDate,
@@ -107,7 +107,7 @@ func (m *MockAnalyzer) AssistForSession(_, channelID, _, _ string, _ func(entryI
 			if len(candidates) > 0 {
 				tripID = candidates[0].ID // 模擬 LLM 判斷「屬於這個行程」
 			} else {
-				tripID, _ = m.store.CreateTrip(channelID, sc.item, startDate, endDate) // 模擬 LLM 新建
+				tripID, _ = m.store.CreateTrip(channelID, sc.title, startDate, endDate) // 模擬 LLM 新建
 			}
 			if tripID != "" {
 				_ = m.store.SetEntryTrip(id, &tripID)
@@ -117,7 +117,7 @@ func (m *MockAnalyzer) AssistForSession(_, channelID, _, _ string, _ func(entryI
 
 	return AssistResult{
 		Kind:     "recorded",
-		Text:     "已記錄(mock):" + sc.item,
+		Text:     "已記錄(mock):" + sc.title,
 		Logged:   1,
 		EntryIDs: []string{id},
 	}
@@ -142,9 +142,9 @@ func (m *MockAnalyzer) Answer(channelID, _ string) model.SearchAnswer {
 		if when == "" {
 			when = "(未指定時間)"
 		}
-		sb.WriteString("・" + when + " " + e.Item + "\n")
+		sb.WriteString("・" + when + " " + e.Title + "\n")
 		presented = append(presented, model.PresentedEntry{
-			Item:      e.Item,
+			Title:     e.Title,
 			Start:     e.Start,
 			StartTime: e.StartTime,
 			End:       e.End,

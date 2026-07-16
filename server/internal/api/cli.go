@@ -22,21 +22,21 @@ func (s *Server) handleInternalListChannels(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleInternalRecord(w http.ResponseWriter, r *http.Request) {
 	channelID := r.PathValue("id")
 	var body struct {
-		Item      string `json:"item"`
+		Title     string `json:"title"`
 		Start     string `json:"start"`
 		StartTime string `json:"startTime"`
 		End       string `json:"end"`
 		EndTime   string `json:"endTime"`
 		Location  string `json:"location"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Item == "" {
-		writeErr(w, http.StatusBadRequest, "invalid_body", "item 必填")
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Title == "" {
+		writeErr(w, http.StatusBadRequest, "invalid_body", "title 必填")
 		return
 	}
 	svc := tripsvc.New(s.store, nil)
 	res, err := svc.Record(tripsvc.RecordInput{
 		ChannelID: channelID,
-		Item:      body.Item,
+		Title:     body.Title,
 		Start:     body.Start,
 		StartTime: body.StartTime,
 		End:       body.End,
@@ -75,13 +75,13 @@ func (s *Server) handleInternalAddToTrip(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleInternalUpdateEntry(w http.ResponseWriter, r *http.Request) {
 	entryID := r.PathValue("id")
 	var body struct {
-		Item      string         `json:"item"`
+		Title     string         `json:"title"`
 		Start     string         `json:"start"`
 		StartTime string         `json:"startTime"`
 		End       string         `json:"end"`
 		EndTime   string         `json:"endTime"`
 		Location  string         `json:"location"`
-		Summary   string         `json:"summary"`
+		Note      string         `json:"note"`
 		Kind      string         `json:"kind"`
 		Detail    map[string]any `json:"detail"`
 	}
@@ -92,13 +92,13 @@ func (s *Server) handleInternalUpdateEntry(w http.ResponseWriter, r *http.Reques
 	svc := tripsvc.New(s.store, nil)
 	if err := svc.UpdateEntry(tripsvc.UpdateEntryInput{
 		ID:        entryID,
-		Item:      body.Item,
+		Title:     body.Title,
 		Start:     body.Start,
 		StartTime: body.StartTime,
 		End:       body.End,
 		EndTime:   body.EndTime,
 		Location:  body.Location,
-		Summary:   body.Summary,
+		Note:      body.Note,
 		Kind:      body.Kind,
 		Detail:    body.Detail,
 	}); err != nil {

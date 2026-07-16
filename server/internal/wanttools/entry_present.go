@@ -21,7 +21,7 @@ var PresentEntriesDeclaration = types.ToolDeclaration{
 	Parameters: map[string]interface{}{
 		"type": "OBJECT",
 		"properties": map[string]interface{}{
-			"item": map[string]interface{}{
+			"title": map[string]interface{}{
 				"type":        "STRING",
 				"description": "事項描述,例如 '開會討論 Q3 預算'。",
 			},
@@ -42,7 +42,7 @@ var PresentEntriesDeclaration = types.ToolDeclaration{
 				"description": "結束時刻 'HH:MM';無則留空字串。",
 			},
 		},
-		"required": []string{"item"},
+		"required": []string{"title"},
 	},
 }
 
@@ -51,15 +51,15 @@ type PresentEntriesTool struct {
 }
 
 func (t *PresentEntriesTool) ValidateInput(args types.ToolArguments, _ types.ToolContext) error {
-	if args.GetString("item") == "" {
-		return fmt.Errorf("item is required")
+	if args.GetString("title") == "" {
+		return fmt.Errorf("title is required")
 	}
 	return nil
 }
 
 func (t *PresentEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]types.ResultContentBlock, error) {
 	e := PresentedEntry{
-		Item:      args.GetString("item"),
+		Title:     args.GetString("title"),
 		Start:     args.GetString("start"),
 		StartTime: args.GetString("startTime"),
 		End:       args.GetString("end"),
@@ -67,13 +67,13 @@ func (t *PresentEntriesTool) Call(args types.ToolArguments, ctx types.ToolContex
 	}
 	addPresented([]PresentedEntry{e})
 
-	summary := fmt.Sprintf("Added to display: %s", e.Item)
+	summary := fmt.Sprintf("Added to display: %s", e.Title)
 	ctx.EmitToolResult(map[string]interface{}{"summary": summary})
 	return []types.ResultContentBlock{types.TextBlock(summary)}, nil
 }
 
 func (t *PresentEntriesTool) RenderToolUse(args types.ToolArguments) string {
-	return fmt.Sprintf("Displaying entry: %s", args.GetString("item"))
+	return fmt.Sprintf("Displaying entry: %s", args.GetString("title"))
 }
 
 func (t *PresentEntriesTool) RenderToolUseError(err error) string {

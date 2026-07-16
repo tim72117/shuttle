@@ -25,7 +25,7 @@ var RecordEntryDeclaration = types.ToolDeclaration{
 	Parameters: map[string]interface{}{
 		"type": "OBJECT",
 		"properties": map[string]interface{}{
-			"item": map[string]interface{}{
+			"title": map[string]interface{}{
 				"type":        "STRING",
 				"description": "要記錄的事項內容(去掉時間後的描述),例如:'開會討論 Q3 預算'",
 			},
@@ -63,7 +63,7 @@ var RecordEntryDeclaration = types.ToolDeclaration{
 					"與 task_plan 無關的一般記錄留空。",
 			},
 		},
-		"required": []string{"item"},
+		"required": []string{"title"},
 	},
 }
 
@@ -72,8 +72,8 @@ type RecordEntryTool struct {
 }
 
 func (t *RecordEntryTool) ValidateInput(args types.ToolArguments, _ types.ToolContext) error {
-	if args.GetString("item") == "" {
-		return fmt.Errorf("item is required")
+	if args.GetString("title") == "" {
+		return fmt.Errorf("title is required")
 	}
 	// 委派給對應 kind 的策略做專屬欄位檢查(如 stay 需 start+end);
 	// 無 kind 或未知 kind 時視為通過。
@@ -84,7 +84,7 @@ func (t *RecordEntryTool) Call(args types.ToolArguments, ctx types.ToolContext) 
 	// 先套用 kind 專屬預設值(如 stay 補 check-in/out 時刻),再讀取欄位。
 	applyKindDefaults(args)
 
-	item := args.GetString("item")
+	title := args.GetString("title")
 	kind := args.GetString("kind")
 	now := time.Now()
 	startDate := resolveDate(args.GetString("start"), now)
@@ -94,7 +94,7 @@ func (t *RecordEntryTool) Call(args types.ToolArguments, ctx types.ToolContext) 
 
 	channelID := ChannelFrom(ctx)
 	entryID, err := emit(channelID, RecordedEntry{
-		Item: item, Start: startDate, StartTime: startTime, End: endDate, EndTime: endTime, Kind: kind,
+		Title: title, Start: startDate, StartTime: startTime, End: endDate, EndTime: endTime, Kind: kind,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save entry: %w", err)
@@ -104,7 +104,7 @@ func (t *RecordEntryTool) Call(args types.ToolArguments, ctx types.ToolContext) 
 		NotifyTaskEntryReady(channelID, taskID, entryID)
 	}
 
-	resultMsg := fmt.Sprintf("Recorded (entryID=%s): %s %s", entryID, describeTime(startDate, startTime, endDate, endTime), item)
+	resultMsg := fmt.Sprintf("Recorded (entryID=%s): %s %s", entryID, describeTime(startDate, startTime, endDate, endTime), title)
 
 	ctx.EmitToolResult(map[string]interface{}{
 		"message":   resultMsg,
@@ -113,13 +113,13 @@ func (t *RecordEntryTool) Call(args types.ToolArguments, ctx types.ToolContext) 
 		"startTime": startTime,
 		"end":       endDate,
 		"endTime":   endTime,
-		"item":      item,
+		"title":     title,
 	})
 	return []types.ResultContentBlock{types.TextBlock(resultMsg)}, nil
 }
 
 func (t *RecordEntryTool) RenderToolUse(args types.ToolArguments) string {
-	return fmt.Sprintf("Recording entry: %s", args.GetString("item"))
+	return fmt.Sprintf("Recording entry: %s", args.GetString("title"))
 }
 
 func (t *RecordEntryTool) RenderToolUseError(err error) string {

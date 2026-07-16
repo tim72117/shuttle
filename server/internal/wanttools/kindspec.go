@@ -14,7 +14,7 @@ type KindSpec interface {
 	// Kind 回傳此策略對應的 kind 字串(如 "stay")。
 	Kind() string
 	// Validate 檢查該類型專屬的欄位要求;不符則回 error(entry_add 會擋下並讓 LLM 補齊)。
-	// 通用欄位(如 item)由 entry_add 自行檢查,這裡只管該類型專屬規則。
+	// 通用欄位(如 title)由 entry_add 自行檢查,這裡只管該類型專屬規則。
 	Validate(args types.ToolArguments) error
 	// ApplyDefaults 就地補上該類型的預設值(如 stay 未給時刻時補 check-in/out 預設時刻)。
 	// args 是可變的 map,直接寫回即可。在 Validate 通過後、實際寫入前呼叫。

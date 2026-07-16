@@ -11,7 +11,7 @@ func toEntry(r entryRow) model.Entry {
 	return model.Entry{
 		ID:        r.ID,
 		ChannelID: r.ChannelID,
-		Item:      r.Item,
+		Title:     r.Title,
 		Start:     r.Start,
 		StartTime: r.StartTime,
 		End:       r.End,
@@ -22,7 +22,7 @@ func toEntry(r entryRow) model.Entry {
 		TripID:    r.TripID,
 		Category:  r.Category,
 		Tags:      r.Tags,
-		Summary:   r.Summary,
+		Note:      r.Note,
 		Kind:      r.Kind,
 		Detail:    r.Detail,
 		CreatedAt: r.CreatedAt,
@@ -35,7 +35,7 @@ func (s *Store) InsertEntry(e model.Entry) error {
 	r := entryRow{
 		ID:        e.ID,
 		ChannelID: e.ChannelID,
-		Item:      e.Item,
+		Title:     e.Title,
 		Start:     e.Start,
 		StartTime: e.StartTime,
 		End:       e.End,
@@ -46,7 +46,7 @@ func (s *Store) InsertEntry(e model.Entry) error {
 		TripID:    e.TripID,
 		Category:  e.Category,
 		Tags:      e.Tags,
-		Summary:   e.Summary,
+		Note:      e.Note,
 		Kind:      e.Kind,
 		Detail:    e.Detail,
 		CreatedAt: e.CreatedAt,
@@ -61,10 +61,10 @@ func (s *Store) SetEntryLatLng(id string, lat, lng float64) error {
 }
 
 // UpdateEntry 更新一筆 entry 的可編輯欄位；留空字串的欄位不更新。
-func (s *Store) UpdateEntry(id, item, start, startTime, end, endTime, location, summary, kind string, detail map[string]any) error {
+func (s *Store) UpdateEntry(id, title, start, startTime, end, endTime, location, note, kind string, detail map[string]any) error {
 	fields := map[string]any{}
-	if item != "" {
-		fields["item"] = item
+	if title != "" {
+		fields["title"] = title
 	}
 	if start != "" {
 		fields["start"] = start
@@ -81,8 +81,8 @@ func (s *Store) UpdateEntry(id, item, start, startTime, end, endTime, location, 
 	if location != "" {
 		fields["location"] = location
 	}
-	if summary != "" {
-		fields["summary"] = summary
+	if note != "" {
+		fields["note"] = note
 	}
 	if kind != "" {
 		fields["kind"] = kind

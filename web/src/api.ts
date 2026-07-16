@@ -240,7 +240,7 @@ export function semanticQuery(
 
 // present_entries 工具輸出、要展示給使用者的條目(不含 id/messageID)。
 export interface PresentedEntry {
-  item: string
+  title: string
   start: string
   startTime: string
   end: string

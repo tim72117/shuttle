@@ -58,7 +58,7 @@ export interface SearchAnswer {
 export interface Entry {
   id: string
   channelID: string
-  item: string // 事項描述
+  title: string // 事項描述
   start: string // 'YYYY-MM-DD';可空
   startTime: string // 'HH:MM';空=全日
   end?: string // 範圍結束日期;可空
@@ -71,7 +71,7 @@ export interface Entry {
   // 後端標注未填時 tags 會回 null(非 []),消費端需 ?? [] 收斂。
   category: string | null
   tags: string[] | null
-  summary: string | null
+  note: string | null
   createdAt: string // ISO8601
 }
 

@@ -58,7 +58,7 @@ type Me struct {
 // PresentedEntry 是查詢回答附帶、要展示給使用者的結構化條目。
 // 形狀與 llm.AssistEntry / wanttools.PresentedEntry 一致,讓前端用同一套列表渲染。
 type PresentedEntry struct {
-	Item      string `json:"item"`
+	Title     string `json:"title"`
 	Start     string `json:"start"`
 	StartTime string `json:"startTime"`
 	End       string `json:"end"`
@@ -79,7 +79,7 @@ type SearchAnswer struct {
 type Entry struct {
 	ID        string   `json:"id"`
 	ChannelID string   `json:"channelID"`
-	Item      string   `json:"item"`              // 事項描述
+	Title     string   `json:"title"`             // 事項描述
 	Start     string   `json:"start"`             // 'YYYY-MM-DD';可空
 	StartTime string   `json:"startTime"`         // 'HH:MM';空=全日
 	End       string   `json:"end,omitempty"`     // 範圍結束日期;可空
@@ -92,7 +92,7 @@ type Entry struct {
 	// LLM 標注(原本在 Message 上,改放 Entry;目前先留空,待後續接上 Classify)。
 	Category  *string        `json:"category"`
 	Tags      []string       `json:"tags"`
-	Summary   *string        `json:"summary"`
+	Note      *string        `json:"note"`
 	Kind      *string        `json:"kind,omitempty"`   // "stay"|"flight"|"activity"|"note"|"car"|"restaurant"|"ticket"
 	Detail    map[string]any `json:"detail,omitempty"` // kind 專屬結構化欄位
 	CreatedAt time.Time      `json:"createdAt"`
@@ -104,7 +104,7 @@ type Entry struct {
 type Trip struct {
 	ID        string    `json:"id"`
 	ChannelID string    `json:"channelID"`
-	Title     string    `json:"title"`         // 行程名(暫用首筆 entry.Item)
+	Title     string    `json:"title"`         // 行程名(暫用首筆 entry.Title)
 	Start     string    `json:"start"`         // 行程起(ISO 字串,字典序=時間序);可空
 	End       string    `json:"end,omitempty"` // 行程訖;可空
 	CreatedAt time.Time `json:"createdAt"`

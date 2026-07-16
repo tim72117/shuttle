@@ -141,7 +141,7 @@ function EntriesView({
             {e.start ? (e.startTime ? `${e.start} ${e.startTime}` : `${e.start} 全日`) : '(無時間)'}
             {e.end ? ` ~ ${e.endTime ? `${e.end} ${e.endTime}` : e.end}` : ''}
           </span>
-          <span className="entry-item-mono">{e.item}</span>
+          <span className="entry-item-mono">{e.title}</span>
           <span className="entry-id-mono">{e.id}</span>
         </div>
       ))}

@@ -101,7 +101,7 @@ func main() {
 			err := st.InsertEntry(model.Entry{
 				ID:        id,
 				ChannelID: channelID,
-				Item:      e.Item,
+				Title:     e.Title,
 				Start:     e.Start,
 				StartTime: e.StartTime,
 				End:       e.End,
@@ -190,9 +190,9 @@ func seedIfEmpty(st *store.Store) error {
 	}
 	// 原話不存後端;seed 直接寫入示範 entry(事件/條目),對齊「entry 為主體」。
 	for _, e := range []model.Entry{
-		{Item: "開會敲定 Q3 產品規格", Start: "2026-06-29", StartTime: "15:00"},
-		{Item: "準備預算上調提案(+15%)", Start: "2026-06-30"},
-		{Item: "修登入頁的 bug", Start: ""},
+		{Title: "開會敲定 Q3 產品規格", Start: "2026-06-29", StartTime: "15:00"},
+		{Title: "準備預算上調提案(+15%)", Start: "2026-06-30"},
+		{Title: "修登入頁的 bug", Start: ""},
 	} {
 		e.ID = "ent_" + randHex()
 		e.ChannelID = ch.ID

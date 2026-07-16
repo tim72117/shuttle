@@ -8,7 +8,7 @@ import (
 
 // RecordedEntry 是 record_entry 工具解析出的一筆條目。
 type RecordedEntry struct {
-	Item      string
+	Title     string
 	Start     string // 'YYYY-MM-DD'
 	StartTime string // 'HH:MM';空=全日
 	End       string // 'YYYY-MM-DD'
@@ -23,7 +23,7 @@ type EntrySink func(channelID string, e RecordedEntry) (entryID string, err erro
 
 // PresentedEntry 是 present_entries 工具輸出的一筆「要展示給使用者」的條目。
 type PresentedEntry struct {
-	Item      string `json:"item"`
+	Title     string `json:"title"`
 	Start     string `json:"start"`
 	StartTime string `json:"startTime"`
 	End       string `json:"end"`

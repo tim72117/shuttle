@@ -46,7 +46,7 @@ func newEntryID() string {
 // RecordInput 是記錄一筆條目的輸入。
 type RecordInput struct {
 	ChannelID string
-	Item      string
+	Title     string
 	Start     string // 'YYYY-MM-DD';可空
 	StartTime string // 'HH:MM';空=全日
 	End       string // 'YYYY-MM-DD';可空
@@ -66,7 +66,7 @@ func (s *Service) Record(in RecordInput) (RecordResult, error) {
 	e := model.Entry{
 		ID:        id,
 		ChannelID: in.ChannelID,
-		Item:      in.Item,
+		Title:     in.Title,
 		Start:     in.Start,
 		StartTime: in.StartTime,
 		End:       in.End,
@@ -110,7 +110,7 @@ func (s *Service) Record(in RecordInput) (RecordResult, error) {
 }
 
 // AddToTrip 把 entry 歸入指定 trip;tripID 留空則以該 entry 的時間/標題新建 trip。
-// title 留空時新建用 entry.Item。回傳最終的 tripID。
+// title 留空時新建用 entry.Title。回傳最終的 tripID。
 func (s *Service) AddToTrip(entryID, tripID, title string) (string, string, error) {
 	e, err := s.st.GetEntry(entryID)
 	if err != nil {
@@ -119,7 +119,7 @@ func (s *Service) AddToTrip(entryID, tripID, title string) (string, string, erro
 	if tripID == "" {
 		t := title
 		if t == "" {
-			t = e.Item
+			t = e.Title
 		}
 		newID, err := s.st.CreateTrip(e.ChannelID, t, e.Start, e.End)
 		if err != nil {
@@ -153,20 +153,20 @@ func (s *Service) FindCandidates(channelID, start, end string) ([]model.Trip, er
 // UpdateEntryInput 是更新條目的輸入，留空欄位不更新。
 type UpdateEntryInput struct {
 	ID        string
-	Item      string
+	Title     string
 	Start     string
 	StartTime string
 	End       string
 	EndTime   string
 	Location  string
-	Summary   string
+	Note      string
 	Kind      string
 	Detail    map[string]any
 }
 
 // UpdateEntry 更新一筆 entry 的可編輯欄位。
 func (s *Service) UpdateEntry(in UpdateEntryInput) error {
-	return s.st.UpdateEntry(in.ID, in.Item, in.Start, in.StartTime, in.End, in.EndTime, in.Location, in.Summary, in.Kind, in.Detail)
+	return s.st.UpdateEntry(in.ID, in.Title, in.Start, in.StartTime, in.End, in.EndTime, in.Location, in.Note, in.Kind, in.Detail)
 }
 
 // DeleteTrip 刪除單一行程(解除底下 entries 的 tripID,不刪 entries 本身)。

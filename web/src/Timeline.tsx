@@ -284,12 +284,12 @@ function MainCard({ entry, updating }: { entry: Entry; updating?: boolean }) {
     <div className={`tl-main-card tl-card-row${updating ? ' updating' : ''}`} onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer' }}>
       <div className="tl-card-content">
         <div className="tl-item">
-          <span className="tl-main-title">{entry.item}</span>
+          <span className="tl-main-title">{entry.title}</span>
         </div>
         {entry.location && <div className="entry-loc"><PinIcon /> {entry.location}</div>}
         <div className={`tl-card-expand${open ? ' open' : ''}`}>
           <div className="tl-card-expand-inner">
-            {entry.summary && <div className="tl-expand-summary">{entry.summary}</div>}
+            {entry.note && <div className="tl-expand-summary">{entry.note}</div>}
             <div className="tl-expand-row">
               <span className="tl-expand-label">開始</span>
               <span>{entry.start ? (entry.startTime ? `${entry.start} ${entry.startTime}` : entry.start) : '—'}</span>
@@ -309,7 +309,7 @@ function MainCard({ entry, updating }: { entry: Entry; updating?: boolean }) {
 function EndCard({ entry }: { entry: Entry }) {
   return (
     <div className="tl-end-card">
-      <span className="tl-end-label">{entry.item} 結束</span>
+      <span className="tl-end-label">{entry.title} 結束</span>
     </div>
   )
 }
@@ -325,7 +325,7 @@ function SubCard({ entry, updating }: { entry: Entry; updating?: boolean }) {
       <div className="tl-card-content">
         <div className="tl-item">
           {time && <span className="tl-time">{time}</span>}
-          {entry.item}
+          {entry.title}
           {span && <span className="tl-span">{span}</span>}
         </div>
         {entry.location && <div className="entry-loc"><PinIcon /> {entry.location}</div>}
@@ -337,7 +337,7 @@ function SubCard({ entry, updating }: { entry: Entry; updating?: boolean }) {
         )}
         <div className={`tl-card-expand${open ? ' open' : ''}`}>
           <div className="tl-card-expand-inner">
-            {entry.summary && <div className="tl-expand-summary">{entry.summary}</div>}
+            {entry.note && <div className="tl-expand-summary">{entry.note}</div>}
             {entry.start && <div className="tl-expand-row">
               <span className="tl-expand-label">開始</span>
               <span>{entry.startTime ? `${entry.start} ${entry.startTime}` : entry.start}</span>

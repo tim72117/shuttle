@@ -57,7 +57,7 @@ func (t *TripEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext) 
 	sb.WriteString(fmt.Sprintf("Trip %s — %d entry(s):\n", tripID, len(entries)))
 	entryList := make([]map[string]interface{}, 0, len(entries))
 	for _, e := range entries {
-		line := fmt.Sprintf("・[entryID=%s] %s", e.ID, e.Item)
+		line := fmt.Sprintf("・[entryID=%s] %s", e.ID, e.Title)
 		if e.Start != "" {
 			line += fmt.Sprintf(" (%s", e.Start)
 			if e.End != "" && e.End != e.Start {
@@ -71,7 +71,7 @@ func (t *TripEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext) 
 		sb.WriteString(line + "\n")
 		entryList = append(entryList, map[string]interface{}{
 			"entryID":  e.ID,
-			"item":     e.Item,
+			"title":    e.Title,
 			"start":    e.Start,
 			"end":      e.End,
 			"location": e.Location,

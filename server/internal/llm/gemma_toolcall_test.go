@@ -6,9 +6,9 @@ import (
 
 // 真實樣本(取自 server/logs/response/..._R7.json):
 //
-//	present_entries{allDay:true, end:"", item:"生日", start:"2026-06-25"}
+//	present_entries{allDay:true, end:"", title:"生日", start:"2026-06-25"}
 func TestParseGemmaToolCalls_RealSample(t *testing.T) {
-	raw := `<|tool_call>call:present_entries{allDay:true,end:<|"|><|"|>,item:<|"|>生日<|"|>,start:<|"|>2026-06-25<|"|>}<tool_call|>`
+	raw := `<|tool_call>call:present_entries{allDay:true,end:<|"|><|"|>,title:<|"|>生日<|"|>,start:<|"|>2026-06-25<|"|>}<tool_call|>`
 
 	calls, remaining := ParseGemmaToolCalls(raw, nil)
 	if len(calls) != 1 {
@@ -27,8 +27,8 @@ func TestParseGemmaToolCalls_RealSample(t *testing.T) {
 	if got := tu.Input.GetString("end"); got != "" {
 		t.Errorf("end 應為空字串,得到 %q", got)
 	}
-	if got := tu.Input.GetString("item"); got != "生日" {
-		t.Errorf("item 應為 生日,得到 %q", got)
+	if got := tu.Input.GetString("title"); got != "生日" {
+		t.Errorf("title 應為 生日,得到 %q", got)
 	}
 	if got := tu.Input.GetString("start"); got != "2026-06-25" {
 		t.Errorf("start 應為 2026-06-25,得到 %q", got)
@@ -48,7 +48,7 @@ func TestParseGemmaToolCalls_NoToolCall(t *testing.T) {
 
 // 前後夾雜一般文字應被保留為 remaining。
 func TestParseGemmaToolCalls_SurroundingText(t *testing.T) {
-	raw := `好的,我幫你記下。<|tool_call>call:record_entry{item:<|"|>開會<|"|>,allDay:false}<tool_call|>已完成。`
+	raw := `好的,我幫你記下。<|tool_call>call:record_entry{title:<|"|>開會<|"|>,allDay:false}<tool_call|>已完成。`
 	calls, remaining := ParseGemmaToolCalls(raw, nil)
 	if len(calls) != 1 {
 		t.Fatalf("應解析出 1 個 tool-call,得到 %d", len(calls))
@@ -63,29 +63,29 @@ func TestParseGemmaToolCalls_SurroundingText(t *testing.T) {
 
 // 多個 tool-call 連續出現。
 func TestParseGemmaToolCalls_Multiple(t *testing.T) {
-	raw := `<|tool_call>call:present_entries{item:<|"|>A<|"|>}<tool_call|><|tool_call>call:present_entries{item:<|"|>B<|"|>}<tool_call|>`
+	raw := `<|tool_call>call:present_entries{title:<|"|>A<|"|>}<tool_call|><|tool_call>call:present_entries{title:<|"|>B<|"|>}<tool_call|>`
 	calls, _ := ParseGemmaToolCalls(raw, nil)
 	if len(calls) != 2 {
 		t.Fatalf("應解析出 2 個 tool-call,得到 %d", len(calls))
 	}
-	if calls[0].ToolUse.Input.GetString("item") != "A" ||
-		calls[1].ToolUse.Input.GetString("item") != "B" {
-		t.Errorf("item 解析錯誤: %v / %v",
-			calls[0].ToolUse.Input.GetString("item"),
-			calls[1].ToolUse.Input.GetString("item"))
+	if calls[0].ToolUse.Input.GetString("title") != "A" ||
+		calls[1].ToolUse.Input.GetString("title") != "B" {
+		t.Errorf("title 解析錯誤: %v / %v",
+			calls[0].ToolUse.Input.GetString("title"),
+			calls[1].ToolUse.Input.GetString("title"))
 	}
 }
 
 // 串流截斷:缺閉標記與右括號,應盡力解析既有片段。
 func TestParseGemmaToolCalls_Truncated(t *testing.T) {
-	raw := `<|tool_call>call:present_entries{allDay:true,item:<|"|>吃飯<|"|>,start:<|"|>2026-06-24`
+	raw := `<|tool_call>call:present_entries{allDay:true,title:<|"|>吃飯<|"|>,start:<|"|>2026-06-24`
 	calls, _ := ParseGemmaToolCalls(raw, nil)
 	if len(calls) != 1 {
 		t.Fatalf("截斷情況仍應盡力解析出 1 個,得到 %d", len(calls))
 	}
 	tu := calls[0].ToolUse
-	if tu.Input.GetString("item") != "吃飯" {
-		t.Errorf("item 應為 吃飯,得到 %q", tu.Input.GetString("item"))
+	if tu.Input.GetString("title") != "吃飯" {
+		t.Errorf("title 應為 吃飯,得到 %q", tu.Input.GetString("title"))
 	}
 	// start 的字串未閉合 → 容錯吃到結尾。
 	if tu.Input.GetString("start") != "2026-06-24" {

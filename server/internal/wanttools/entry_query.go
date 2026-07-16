@@ -88,7 +88,7 @@ func (t *QueryEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext)
 		sb.WriteString("(沒有符合的條目)")
 	} else {
 		for _, e := range entries {
-			sb.WriteString(fmt.Sprintf("・[entryID=%s] %s %s\n", e.ID, describeTime(e.Start, e.StartTime, e.End, e.EndTime), e.Item))
+			sb.WriteString(fmt.Sprintf("・[entryID=%s] %s %s\n", e.ID, describeTime(e.Start, e.StartTime, e.End, e.EndTime), e.Title))
 		}
 	}
 	summary := strings.TrimRight(sb.String(), "\n")
