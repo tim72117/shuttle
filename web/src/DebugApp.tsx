@@ -4,6 +4,7 @@ import { onApiCall } from './api'
 import { useAppState, PhoneContent } from './App'
 import { DebugPanel } from './DebugPanel'
 import type { User } from './types'
+import './debug.css'
 
 function StatusBar({ user }: { user: User | null }) {
   return (

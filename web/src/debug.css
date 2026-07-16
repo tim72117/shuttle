@@ -1,0 +1,260 @@
+/* Debug 除錯介面專屬樣式(?debug 模式)。
+   套 iPhone 外框(.workbench/.phone/.phone-screen/.notch/.statusbar)
+   搭配右側 debug panel(.debug 開頭),只給開發者看程式用,
+   跟一般使用者用的 /app(styles.css)完全無交集。
+   見 DebugApp.tsx / DebugPanel.tsx。 */
+
+/* ---- 整體版面:左 phone + 右 debug ---- */
+.workbench {
+  display: flex;
+  min-height: 100vh;
+  gap: 32px;
+  padding: 32px;
+  align-items: flex-start;
+  background: #1c1c1e;
+}
+
+/* ---- iPhone 外框 ---- */
+.phone {
+  flex: 0 0 auto;
+  width: 390px;
+  height: 844px;
+  background: #000;
+  border-radius: 56px;
+  padding: 12px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  position: sticky;
+  top: 32px;
+}
+
+.phone-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--ios-bg);
+  border-radius: 44px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 瀏海 */
+.notch {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 150px;
+  height: 30px;
+  background: #000;
+  border-bottom-left-radius: 18px;
+  border-bottom-right-radius: 18px;
+  z-index: 50;
+}
+
+/* 狀態列 */
+.statusbar {
+  height: 50px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 0 28px 6px;
+  font-size: 16px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+/* ---- Debug panel ---- */
+.debug {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 620px;
+  background: #0d0d0f;
+  color: #d4d4d8;
+  border-radius: 16px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 64px);
+  position: sticky;
+  top: 32px;
+}
+.debug-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #26262b;
+  color: #fff;
+}
+.debug-head .h-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.debug-head button {
+  background: #26262b;
+  color: #d4d4d8;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.debug-list {
+  overflow-y: auto;
+  padding: 8px;
+}
+
+/* Debug panel 分頁切換 */
+.debug-tabs {
+  display: flex;
+  gap: 4px;
+}
+.debug-tabs button {
+  background: transparent;
+  color: #8a8a93;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.debug-tabs button.active {
+  background: #2a2a2e;
+  color: #fff;
+}
+
+/* Entries 列表 */
+.entries-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #8a8a93;
+  font-size: 12px;
+  padding: 4px 6px 8px;
+}
+.entries-head button {
+  background: #2a2a2e;
+  color: #ddd;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.entries-head button.danger {
+  background: #4a1f1f;
+  color: #ff9e9e;
+}
+.entries-head button.danger:hover {
+  background: #5f2626;
+}
+.entry-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #2a2a2e;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.entry-when-mono {
+  color: #6cb6ff;
+}
+.entry-item-mono {
+  color: #e8e8ea;
+}
+.entry-id-mono {
+  color: #6a6a72;
+  font-size: 10px;
+}
+.call {
+  border: 1px solid #26262b;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.call-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  background: #161619;
+}
+.call-head:hover {
+  background: #1d1d22;
+}
+.method {
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.method.GET {
+  background: #1f3a5f;
+  color: #8ec5ff;
+}
+.method.POST {
+  background: #1f4d2e;
+  color: #8ff0a4;
+}
+.method.DELETE {
+  background: #5f1f1f;
+  color: #ff9e9e;
+}
+.method.OPTIONS {
+  background: #4a4a1f;
+  color: #f0e98f;
+}
+.call-path {
+  flex: 1;
+  color: #c9c9d0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.status {
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.status.ok {
+  background: #1f4d2e;
+  color: #8ff0a4;
+}
+.status.err {
+  background: #5f1f1f;
+  color: #ff9e9e;
+}
+.status.fail {
+  background: #3a3a3a;
+  color: #ffb454;
+}
+.dur {
+  color: #6e6e78;
+  font-size: 11px;
+}
+.call-body {
+  padding: 10px;
+  border-top: 1px solid #26262b;
+  background: #0d0d0f;
+}
+.kv-label {
+  color: #6e6e78;
+  margin: 8px 0 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.kv-label:first-child {
+  margin-top: 0;
+}
+.json-err {
+  color: #ffb454;
+}
