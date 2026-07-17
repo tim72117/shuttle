@@ -48,6 +48,9 @@ export function ChatScreen({
   const [composerExpanded, setComposerExpanded] = useState(false)
   // ask_user:agent 缺資訊(如住宿退房日)時,透過 WS 推來的請求;非 null 時前端開對應 UI。
   const [askUser, setAskUser] = useState<{ askType: string; prompt: string } | null>(null)
+  // ask_choice:agent 需要使用者從多個選項擇一時(如多個房型),透過 WS 推來的請求;
+  // 非 null 時前端開選單 UI(AskChoiceSheet)。與 ask_user 是獨立的請求/元件,互不相關。
+  const [askChoice, setAskChoice] = useState<{ prompt: string; options: AskChoiceOption[] } | null>(null)
   // taskPlaceholders:task_plan 建立中的任務,依 date 在時間軸插入佔位卡;
   // 對應 entry_add(帶 taskID)完成後由 task_entry_ready 移除。
   const [taskPlaceholders, setTaskPlaceholders] = useState<TaskPlaceholder[]>([])
@@ -150,6 +153,15 @@ export function ChatScreen({
         } else if (msg.event === 'ask_user' && msg.askType) {
           // agent 缺資訊,請使用者透過 UI 補上;開對應輸入元件(目前支援 date)。
           setAskUser({ askType: msg.askType, prompt: msg.prompt ?? '' })
+        } else if (msg.event === 'ask_choice' && Array.isArray(msg.options)) {
+          // agent 需要使用者從多個選項擇一;開選單 UI(AskChoiceSheet)。
+          setAskChoice({
+            prompt: msg.prompt ?? '',
+            options: msg.options.map((o: Record<string, unknown>) => ({
+              title: String(o.title ?? ''),
+              description: typeof o.description === 'string' ? o.description : undefined,
+            })),
+          })
         } else if (msg.event === 'task_created' && typeof msg.taskID === 'number') {
           // task_plan 建立任務:在該日期下插入一張「新增中」佔位卡。
           setTaskPlaceholders((prev) => [...prev, { taskID: msg.taskID, date: msg.date ?? '', text: msg.text ?? '', kind: msg.kind ?? '' }])
@@ -439,6 +451,18 @@ export function ChatScreen({
           }}
         />
       )}
+      {askChoice && (
+        <AskChoiceSheet
+          prompt={askChoice.prompt}
+          options={askChoice.options}
+          onCancel={() => setAskChoice(null)}
+          onSubmit={(title) => {
+            setAskChoice(null)
+            // 把選中選項的主標題當成一則新訊息送回,agent 靠對話歷史接上前文(比照 ask_user)。
+            send(title)
+          }}
+        />
+      )}
       {showRecommendedPlaces && recommendedPlaces.length > 0 && (
         <RecommendedPlacesModal
           places={recommendedPlaces}
@@ -514,6 +538,52 @@ function AskUserSheet({
           >
             確定
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ask_choice 工具的一個選項:主標題(必填)+ 一行描述(可選),與後端
+// server/internal/wanttools/ask_choice.go 的 AskChoiceOption 對齊。
+export type AskChoiceOption = { title: string; description?: string }
+
+// AskChoiceSheet:agent 呼叫 ask_choice 時,前端開啟的選單底部彈出面板
+// (獨立於 AskUserSheet 的全新元件,職責不同:單選、選項數不限、每項有主標題+描述)。
+// 視覺與互動模式比照 AskUserSheet(複用 .ask-user-backdrop/.ask-user-sheet):
+// 點背景或「取消」鈕關閉且不送出任何值;點某個選項則把該選項的 title 透過
+// onSubmit 送回(當成新訊息,不含 description)。
+function AskChoiceSheet({
+  prompt,
+  options,
+  onSubmit,
+  onCancel,
+}: {
+  prompt: string
+  options: AskChoiceOption[]
+  onSubmit: (title: string) => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="ask-user-backdrop" onClick={onCancel}>
+      <div className="ask-user-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="ask-user-prompt">{prompt || '請選擇一個選項'}</div>
+        <div className="ask-choice-list">
+          {options.map((opt, i) => (
+            <button
+              key={i}
+              className="ask-choice-option"
+              onClick={() => onSubmit(opt.title)}
+            >
+              <span className="ask-choice-option-title">{opt.title}</span>
+              {opt.description && (
+                <span className="ask-choice-option-desc">{opt.description}</span>
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="ask-user-actions">
+          <button className="btn-secondary" onClick={onCancel}>取消</button>
         </div>
       </div>
     </div>

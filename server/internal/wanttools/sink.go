@@ -41,6 +41,18 @@ type EntryUpdatingFn func(channelID, entryID string)
 // 請使用者補上缺失資訊(server 啟動時用 BindAskUser 注入)。
 type AskUserFn func(channelID, askType, prompt string)
 
+// AskChoiceOption 是 ask_choice 工具的一個選項:主標題 + 一行描述(可選)。
+type AskChoiceOption struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// AskChoiceFn 廣播 ask_choice 事件給前端,讓前端開啟選單 UI 請使用者從
+// options 中選一個(server 啟動時用 BindAskChoice 注入)。
+// options 沿用 RecommendedPlacesFn 的風格,用 []map[string]any 而非具名型別,
+// 避免 api 套件為了此簽章反向依賴 wanttools 的 AskChoiceOption。
+type AskChoiceFn func(channelID, prompt string, options []map[string]any)
+
 // TaskCreatedFn 廣播 task_created 事件(帶 taskID/date/text/kind)給前端,
 // 讓前端在該日期下插入一張標示動作(新增/更新)的佔位卡(server 啟動時用 BindTaskCreated 注入)。
 type TaskCreatedFn func(channelID string, taskID int, date, text, kind string)
@@ -55,11 +67,12 @@ type RecommendedPlacesFn func(channelID string, places []map[string]any)
 
 var (
 	// recordMu 序列化整個「記錄一則訊息」的流程,確保 RecordLock 保護的計數/清單不交錯。
-	recordMu       sync.Mutex
-	sink           EntrySink
-	notifyFn       NotifyFn
-	entryUpdating  EntryUpdatingFn
-	askUser        AskUserFn
+	recordMu          sync.Mutex
+	sink              EntrySink
+	notifyFn          NotifyFn
+	entryUpdating     EntryUpdatingFn
+	askUser           AskUserFn
+	askChoice         AskChoiceFn
 	taskCreated       TaskCreatedFn
 	taskEntryReady    TaskEntryReadyFn
 	recommendedPlaces RecommendedPlacesFn
@@ -106,6 +119,21 @@ func BindAskUser(fn AskUserFn) { askUser = fn }
 func NotifyAskUser(channelID, askType, prompt string) {
 	if askUser != nil {
 		askUser(channelID, askType, prompt)
+	}
+}
+
+// BindAskChoice 注入 ask_choice 廣播函式(server 啟動時呼叫)。
+func BindAskChoice(fn AskChoiceFn) { askChoice = fn }
+
+// NotifyAskChoice 廣播 ask_choice(帶 prompt/options),供 ask_choice 工具呼叫,
+// 讓前端開啟選單 UI 請使用者從 options 中選一個。
+func NotifyAskChoice(channelID, prompt string, options []AskChoiceOption) {
+	if askChoice != nil {
+		out := make([]map[string]any, len(options))
+		for i, o := range options {
+			out[i] = map[string]any{"title": o.Title, "description": o.Description}
+		}
+		askChoice(channelID, prompt, out)
 	}
 }
 

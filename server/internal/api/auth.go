@@ -32,7 +32,7 @@ func (s *Server) userFromToken(token string) model.User {
 	if u, err := s.store.FindUserByID(claims.Sub); err == nil {
 		return u
 	}
-	return model.User{ID: claims.Sub, Name: claims.Name, AvatarColor: "#4A90D9"}
+	return model.User{ID: claims.Sub, Name: claims.Name, AvatarColor: "#8C7B6A"}
 }
 
 // POST /v1/auth/apple
@@ -64,7 +64,7 @@ func (s *Server) handleAppleAuth(w http.ResponseWriter, r *http.Request) {
 		if name == "" {
 			name = "Apple 使用者"
 		}
-		user, err = s.store.CreateAppleUser("usr_"+newID(), name, "#4A90D9", identity.Sub)
+		user, err = s.store.CreateAppleUser("usr_"+newID(), name, "#8C7B6A", identity.Sub)
 	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "user_failed", err.Error())
@@ -109,7 +109,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = email
 	}
-	user, err := s.store.CreatePasswordUser("usr_"+newID(), name, "#4A90D9", email, hash)
+	user, err := s.store.CreatePasswordUser("usr_"+newID(), name, "#8C7B6A", email, hash)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "create_failed", err.Error())
 		return
@@ -168,7 +168,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	user, err := s.store.FindUserByID(claims.Sub)
 	if err != nil {
 		// token 有效但使用者已不存在
-		user = model.User{ID: claims.Sub, Name: claims.Name, AvatarColor: "#4A90D9"}
+		user = model.User{ID: claims.Sub, Name: claims.Name, AvatarColor: "#8C7B6A"}
 	}
 	email, _ := s.store.GetUserEmail(claims.Sub)
 	writeJSON(w, http.StatusOK, model.Me{

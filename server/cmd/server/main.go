@@ -130,6 +130,7 @@ func main() {
 	wanttools.BindNotify(srv.NotifyEntriesUpdated)
 	wanttools.BindEntryUpdating(srv.NotifyEntryUpdating)
 	wanttools.BindAskUser(srv.NotifyAskUser)
+	wanttools.BindAskChoice(srv.NotifyAskChoice)
 	wanttools.BindTaskCreated(srv.NotifyTaskCreated)
 	wanttools.BindTaskEntryReady(srv.NotifyTaskEntryReady)
 	wanttools.BindRecommendedPlaces(srv.NotifyRecommendedPlaces)
@@ -208,7 +209,7 @@ func seedUsers(st *store.Store) error {
 	}{
 		// usr_me 是示範頻道(seedIfEmpty)的建立者/owner,需先存在於 users 表,
 		// 否則寫入 members 中介表會違反外鍵約束(Postgres 會擋,SQLite 預設放行)。
-		{model.User{ID: "usr_me", Name: "我", AvatarColor: "#4A90D9"}, "me@channel.dev"},
+		{model.User{ID: "usr_me", Name: "我", AvatarColor: "#8C7B6A"}, "me@channel.dev"},
 		{model.User{ID: "usr_alice", Name: "Alice", AvatarColor: "#E07A5F"}, "alice@channel.dev"},
 		{model.User{ID: "usr_bob", Name: "Bob", AvatarColor: "#3D9970"}, "bob@channel.dev"},
 		{model.User{ID: "usr_carol", Name: "Carol", AvatarColor: "#B07AE0"}, "carol@channel.dev"},
@@ -239,7 +240,7 @@ func seedIfEmpty(st *store.Store) error {
 	if n > 0 {
 		return nil
 	}
-	me := model.User{ID: "usr_me", Name: "我", AvatarColor: "#4A90D9"}
+	me := model.User{ID: "usr_me", Name: "我", AvatarColor: "#8C7B6A"}
 	ch, err := st.CreateChannel("ch_001", "產品討論", me)
 	if err != nil {
 		return err

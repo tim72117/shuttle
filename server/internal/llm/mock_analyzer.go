@@ -72,7 +72,9 @@ func fmtDate(day int) string {
 //  2. 查時間相符的候選 trip(等同 record_entry 列候選)。
 //  3. 模擬「LLM 的決定」:有候選就歸入第一個;無候選但有時間則新建 trip。
 //     (等同 LLM 判斷後呼叫 add_to_trip。mock 的規則是「有候選就歸入」。)
-func (m *MockAnalyzer) AssistForSession(_, channelID, _, _ string, _ func(entryIDs []string) error) AssistResult {
+//
+// lang 參數忽略:mock 本來就是寫死中文假資料,不需要真的支援雙語。
+func (m *MockAnalyzer) AssistForSession(_, channelID, _, _, _ string, _ func(entryIDs []string) error) AssistResult {
 	m.mu.Lock()
 	sc := mockScenarios[m.next%len(mockScenarios)]
 	m.next++
@@ -124,8 +126,8 @@ func (m *MockAnalyzer) AssistForSession(_, channelID, _, _ string, _ func(entryI
 }
 
 // Answer 模擬查詢:讀該頻道現有 entries,整理成回答 + 展示條目。
-// 不解析 question(僅作觸發);回真實的頻道條目。
-func (m *MockAnalyzer) Answer(channelID, _ string) model.SearchAnswer {
+// 不解析 question(僅作觸發);回真實的頻道條目。lang 參數忽略,理由同 AssistForSession。
+func (m *MockAnalyzer) Answer(channelID, _, _ string) model.SearchAnswer {
 	entries, err := m.store.ListEntriesByChannel(channelID)
 	if err != nil || len(entries) == 0 {
 		return model.SearchAnswer{

@@ -31,6 +31,16 @@ type User struct {
 	AvatarColor string `json:"avatarColor"`
 }
 
+// AdminUserSummary 是 /admin/api/users 回傳的單筆使用者資訊,供管理後台的使用者
+// 列表使用。刻意只含基本身分欄位——不含方案/額度/用量(那些不在管理後台的
+// 整合範圍內)。
+type AdminUserSummary struct {
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	Name        string `json:"name"`
+	AvatarColor string `json:"avatarColor"`
+}
+
 // 頻道成員角色:決定該成員在頻道內的權限。
 const (
 	RoleEditor = "editor" // 可修改(記事/編輯條目);owner 預設為此。

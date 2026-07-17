@@ -13,6 +13,7 @@ import type {
   Trip,
   APIErrorBody,
 } from './types'
+import { getAssistLang } from './assistLang'
 
 // 一筆 API 交易的完整紀錄,debug panel 與 console log 都靠它。
 export interface ApiCall {
@@ -268,7 +269,7 @@ export function semanticQuery(
     cfg,
     'POST',
     `/v1/channels/${encodeURIComponent(channelID)}/query`,
-    { question },
+    { question, lang: getAssistLang() },
   )
 }
 
@@ -294,7 +295,7 @@ export function assist(cfg: ClientConfig, channelID: string, text: string) {
     cfg,
     'POST',
     `/v1/channels/${encodeURIComponent(channelID)}/assist`,
-    { text },
+    { text, lang: getAssistLang() },
   )
 }
 
@@ -380,7 +381,7 @@ export function publicAssist(baseURL: string, token: string, text: string) {
   return fetch(`${baseURL}/v1/public/${encodeURIComponent(token)}/assist`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, lang: getAssistLang() }),
   }).then(async (r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()

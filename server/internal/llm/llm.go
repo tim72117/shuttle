@@ -11,5 +11,6 @@ type Analyzer interface {
 	// Answer 對某頻道做自然語言查詢:agent 依 assistant.md 指引,自己用
 	// query_entries 查條目、再用 present_entries 呈現相關條目。
 	// channelID 供 query_entries 工具定位要查的頻道。
-	Answer(channelID, question string) model.SearchAnswer
+	// lang 是使用者設定的回答語言偏好("zh-TW"/"en"),空字串視為預設(繁體中文)。
+	Answer(channelID, question, lang string) model.SearchAnswer
 }

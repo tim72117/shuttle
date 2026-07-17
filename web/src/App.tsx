@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import {
-  ChevronLeft,
-  Send, AlertCircle, Plus, LogIn,
+  ChevronLeft, ChevronDown, Check,
+  Send, AlertCircle, Plus, LogIn, X, Settings, LogOut,
 } from 'lucide-react'
 import type { ClientConfig } from './api'
 import * as api from './api'
@@ -11,6 +11,8 @@ import type { Channel, Entry, User } from './types'
 import { LandingPage } from './LandingPage'
 import { ChatScreen } from './ChatScreen'
 import { MultiTrackTimeline } from './Timeline'
+import type { AssistLang } from './assistLang'
+import { ASSIST_LANG_KEY, getAssistLang } from './assistLang'
 
 // baseURL 由建置時的 VITE_API_BASE 決定(見 .env.development),不開放使用者於 UI 修改;
 // 未設時退回目前頁面 origin(production 前後端同源部署)。
@@ -22,7 +24,6 @@ export const LS_DEFAULT_CHANNEL = 'shuttle.defaultChannelID'
 const AUTH_TOKEN_KEY = 'shuttle.auth.token'
 const AUTH_USER_KEY = 'shuttle.auth.user'
 const AUTH_EMAIL_KEY = 'shuttle.auth.email'
-
 
 export function useAppState() {
   const [token, setToken] = useState<string | null>(
@@ -112,7 +113,7 @@ export function App() {
 }
 
 // 訪客身分(未登入),需與後端 guestUser 一致。
-const GUEST_USER: User = { id: 'usr_me', name: '訪客', avatarColor: '#8e8e93' }
+const GUEST_USER: User = { id: 'usr_me', name: '訪客', avatarColor: '#8C7B6A' }
 
 export interface ContentProps {
   cfg: ClientConfig
@@ -193,37 +194,55 @@ export function PhoneContent(props: ContentProps) {
 
 function DesktopContent(props: ContentProps) {
   const { cfg, activeChannel, setActiveChannel } = props
+  // settingsOpen 獨立於 DesktopUserMenu 內部的 popover 開關狀態:選單裡點「設定」
+  // 時會同時關閉 popover(DesktopUserMenu 內部 state)並開啟這裡的 dialog。
+  // dialog 提升到這一層(而非渲染在 DesktopUserMenu/側欄內部)渲染,是因為
+  // .desktop-layout 設有 overflow: hidden,side bar 寬度也只有 272px——
+  // 若 dialog 渲染在側欄內部,置中/覆蓋全畫面的彈窗會被側欄裁切或擠壓變形。
+  // 提升到這裡、和 .desktop-layout 同層,搭配 CSS 的 position: fixed 疊加,
+  // 才能保證 dialog 蓋住整個桌面版佈局(含側欄)最上層。
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
-    <div className="desktop-layout">
-      <aside className="desktop-sidebar">
-        <DesktopChannelList
-          cfg={cfg}
-          activeChannelID={activeChannel?.id ?? null}
-          onOpen={(c) => setActiveChannel(c)}
-        />
-        <DesktopUserMenu
+    <>
+      <div className="desktop-layout">
+        <aside className="desktop-sidebar">
+          <DesktopChannelList
+            cfg={cfg}
+            activeChannelID={activeChannel?.id ?? null}
+            onOpen={(c) => setActiveChannel(c)}
+          />
+          <DesktopUserMenu
+            cfg={cfg}
+            user={props.user}
+            isGuest={props.isGuest}
+            onAuthed={props.onAuthed}
+            onLogout={props.onLogout}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
+        </aside>
+        <main className="desktop-main">
+          {activeChannel ? (
+            <ChatScreen
+              cfg={cfg}
+              channel={activeChannel}
+              user={props.user}
+              onBack={() => setActiveChannel(null)}
+            />
+          ) : (
+            <div className="desktop-empty-state">選擇一個行程開始</div>
+          )}
+        </main>
+      </div>
+      {settingsOpen && (
+        <SettingsDialog
           cfg={cfg}
           user={props.user}
           email={props.email}
-          isGuest={props.isGuest}
-          onAuthed={props.onAuthed}
-          onLogout={props.onLogout}
+          onClose={() => setSettingsOpen(false)}
         />
-      </aside>
-      <main className="desktop-main">
-        {activeChannel ? (
-          <ChatScreen
-            cfg={cfg}
-            channel={activeChannel}
-            user={props.user}
-            onBack={() => setActiveChannel(null)}
-          />
-        ) : (
-          <div className="desktop-empty-state">選擇一個行程開始</div>
-        )}
-      </main>
-    </div>
+      )}
+    </>
   )
 }
 
@@ -301,25 +320,25 @@ function DesktopChannelList({
   )
 }
 
-// 桌面版左下方使用者設定入口:頭像 + 名稱一列,點擊展開 popover 選單,
-// 功能對應手機版 SettingsScreen(登入身分、登出、API Token、Base URL、健康檢查)。
+// 桌面版左下方使用者設定入口:頭像 + 名稱一列,點擊展開 popover 選單。
+// 已登入時選單只有「設定」(開啟 SettingsDialog)、「登出」兩項精簡項目;
+// 訪客狀態維持原邏輯不變,popover 顯示登入表單(LoginForm)。
 function DesktopUserMenu({
   cfg,
   user,
-  email,
   isGuest,
   onAuthed,
   onLogout,
+  onOpenSettings,
 }: {
   cfg: ClientConfig
   user: User
-  email: string
   isGuest: boolean
   onAuthed: (token: string, user: User, email: string) => void
   onLogout: () => void
+  onOpenSettings: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const [health, setHealth] = useState<string>('未測試')
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -330,16 +349,6 @@ function DesktopUserMenu({
     document.addEventListener('mousedown', onClickOutside)
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [open])
-
-  const ping = async () => {
-    setHealth('測試中…')
-    try {
-      const r = await api.health(cfg)
-      setHealth(`✅ ${r.status}`)
-    } catch (e) {
-      setHealth(`❌ ${errMsg(e)}`)
-    }
-  }
 
   return (
     <div className="desktop-user-menu" ref={menuRef}>
@@ -362,44 +371,187 @@ function DesktopUserMenu({
             </>
           ) : (
             <>
-              <div className="section-title">目前登入</div>
-              <div className="row">
-                <Avatar user={user} />
-                <div className="grow">
-                  <div className="name">{user.name}</div>
-                  <div className="sub">{email || user.id}</div>
-                </div>
-              </div>
-              <div className="row" onClick={() => { onLogout(); setOpen(false) }}>
-                <div className="grow">
-                  <div className="name" style={{ color: 'var(--ios-red)' }}>登出</div>
-                </div>
-              </div>
-              <div className="section-title">API Token (CLI 用)</div>
-              <TokenDisplay token={cfg.token} />
+              <button
+                className="desktop-user-menu-item"
+                onClick={() => { setOpen(false); onOpenSettings() }}
+              >
+                <Settings size={16} strokeWidth={1.8} />
+                <span>設定</span>
+              </button>
+              <button
+                className="desktop-user-menu-item"
+                onClick={() => { onLogout(); setOpen(false) }}
+              >
+                <LogOut size={16} strokeWidth={1.8} color="var(--ios-red)" />
+                <span style={{ color: 'var(--ios-red)' }}>登出</span>
+              </button>
             </>
           )}
-          <div className="section-title">後端連線</div>
-          <div className="field">
-            <label>Base URL(由 VITE_API_BASE 設定,不可於此修改)</label>
-            <input value={cfg.baseURL} readOnly disabled />
-          </div>
-          <div className="section-title">健康檢查</div>
-          <div className="row" onClick={ping}>
-            <div className="grow">
-              <div className="name">GET /health</div>
-              <div className="sub">{health}</div>
-            </div>
-          </div>
         </div>
       )}
       <button className="desktop-user-trigger" onClick={() => setOpen((v) => !v)}>
         <Avatar user={user} />
         <div className="grow">
           <div className="name">{isGuest ? '訪客' : user.name}</div>
-          <div className="sub">{isGuest ? '點擊登入' : '設定'}</div>
+          {isGuest && <div className="sub">點擊登入</div>}
         </div>
       </button>
+    </div>
+  )
+}
+
+// LLM 回答語言下拉選單:自訂觸發列 + 選項清單,取代原生 <select>,樣式與互動
+// 比照 iOS 風格(觸發列排版沿用 .field input,選項清單沿用 .desktop-user-popover
+// 的浮層視覺——卡片背景、圓角、陰影)。SettingsDialog(桌面版)/SettingsScreen
+// (手機版)共用同一份實作,只各自傳入目前值與 onChange;兩處容器寬度不同但
+// 元件本身以 width: 100% 撐滿父層 .field,不需要為此分開兩份程式碼。
+// 點擊外部關閉的實作模式沿用 DesktopUserMenu:useRef 抓容器 + mousedown 監聽
+// 判斷點擊處是否在容器內。
+const ASSIST_LANG_OPTIONS: { value: AssistLang; label: string }[] = [
+  { value: 'zh-TW', label: '繁體中文' },
+  { value: 'en', label: '英文' },
+]
+
+function LangSelect({
+  value,
+  onChange,
+}: {
+  value: AssistLang
+  onChange: (v: AssistLang) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const boxRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onClickOutside = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [open])
+
+  const current = ASSIST_LANG_OPTIONS.find((o) => o.value === value)
+
+  return (
+    <div className="lang-select" ref={boxRef}>
+      <button
+        type="button"
+        className="lang-select-trigger"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span>{current?.label ?? value}</span>
+        <ChevronDown size={16} strokeWidth={1.8} color="var(--ios-gray)" />
+      </button>
+      {open && (
+        <div className="lang-select-popover">
+          {ASSIST_LANG_OPTIONS.map((o) => (
+            <button
+              type="button"
+              key={o.value}
+              className="lang-select-option"
+              onClick={() => { onChange(o.value); setOpen(false) }}
+            >
+              <span>{o.label}</span>
+              {o.value === value && <Check size={16} strokeWidth={2} color="var(--ios-blue)" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 桌面版「設定」dialog:點選 DesktopUserMenu 的「設定」項目後開啟,置中卡片彈窗,
+// 視覺沿用 RecommendedPlacesModal 的 .rp-modal-backdrop/.rp-modal(見 ChatScreen.tsx),
+// 內容則對應手機版 SettingsScreen 扣除「登出」(登出已是選單裡的獨立項目)。
+// 疊加 .settings-dialog-backdrop 只覆寫 position 從 absolute 改為 fixed:
+// RecommendedPlacesModal 用 absolute+inset:0 是相對最近的 relative 祖先(.desktop-main)
+// 定位,只蓋住右側聊天區;這裡是從 DesktopContent 頂層渲染,需要蓋住整個桌面版佈局
+// (含左側側欄),且不能被 .desktop-layout 的 overflow: hidden 裁切,故改用 fixed。
+function SettingsDialog({
+  cfg,
+  user,
+  email,
+  onClose,
+}: {
+  cfg: ClientConfig
+  user: User
+  email: string
+  onClose: () => void
+}) {
+  const [health, setHealth] = useState<string>('未測試')
+  const [assistLang, setAssistLang] = useState<AssistLang>(() => getAssistLang())
+  const [devOpen, setDevOpen] = useState(false)
+
+  const ping = async () => {
+    setHealth('測試中…')
+    try {
+      const r = await api.health(cfg)
+      setHealth(`✅ ${r.status}`)
+    } catch (e) {
+      setHealth(`❌ ${errMsg(e)}`)
+    }
+  }
+
+  return (
+    <div className="rp-modal-backdrop settings-dialog-backdrop" onClick={onClose}>
+      <div className="rp-modal settings-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="rp-modal-head">
+          <span className="rp-modal-title">設定</span>
+          <button className="btn icon-btn" onClick={onClose} title="關閉">
+            <X size={18} strokeWidth={1.8} />
+          </button>
+        </div>
+        <div className="rp-modal-body">
+          <div className="section-title">目前登入</div>
+          <div className="row">
+            <Avatar user={user} />
+            <div className="grow">
+              <div className="name">{user.name}</div>
+              <div className="sub">{email || user.id}</div>
+            </div>
+          </div>
+          <div className="section-title">LLM 回答語言</div>
+          <div className="field">
+            <label>助理回答(assist/語意查詢)使用的語言,不影響介面文字</label>
+            <LangSelect
+              value={assistLang}
+              onChange={(v) => {
+                setAssistLang(v)
+                localStorage.setItem(ASSIST_LANG_KEY, v)
+              }}
+            />
+          </div>
+          <div className="dev-section-toggle" onClick={() => setDevOpen((o) => !o)}>
+            <span>開發</span>
+            <ChevronDown
+              size={16}
+              strokeWidth={1.8}
+              color="var(--ios-gray)"
+              className={devOpen ? 'dev-section-chevron open' : 'dev-section-chevron'}
+            />
+          </div>
+          {devOpen && (
+            <>
+              <div className="section-title">API Token (CLI 用)</div>
+              <TokenDisplay token={cfg.token} />
+              <div className="section-title">後端連線</div>
+              <div className="field">
+                <label>Base URL(由 VITE_API_BASE 設定,不可於此修改)</label>
+                <input value={cfg.baseURL} readOnly disabled />
+              </div>
+              <div className="section-title">健康檢查</div>
+              <div className="row" onClick={ping}>
+                <div className="grow">
+                  <div className="name">GET /health</div>
+                  <div className="sub">{health}</div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -408,8 +560,12 @@ function DesktopUserMenu({
 // ---- 共用小元件 ----
 
 export function Avatar({ user }: { user: { name: string; avatarColor: string } }) {
+  const hasColor = !!user.avatarColor
   return (
-    <div className="avatar" style={{ background: user.avatarColor }}>
+    <div
+      className={hasColor ? 'avatar' : 'avatar avatar-empty'}
+      style={hasColor ? { background: user.avatarColor } : undefined}
+    >
       {user.name.slice(0, 1)}
     </div>
   )
@@ -704,6 +860,7 @@ function SettingsScreen({
   onBack?: () => void
 }) {
   const [health, setHealth] = useState<string>('未測試')
+  const [assistLang, setAssistLang] = useState<AssistLang>(() => getAssistLang())
 
   const ping = async () => {
     setHealth('測試中…')
@@ -765,6 +922,17 @@ function SettingsScreen({
         <div className="field">
           <label>Base URL(由 VITE_API_BASE 設定,不可於此修改)</label>
           <input value={cfg.baseURL} readOnly disabled />
+        </div>
+        <div className="section-title">LLM 回答語言</div>
+        <div className="field">
+          <label>助理回答(assist/語意查詢)使用的語言,不影響介面文字</label>
+          <LangSelect
+            value={assistLang}
+            onChange={(v) => {
+              setAssistLang(v)
+              localStorage.setItem(ASSIST_LANG_KEY, v)
+            }}
+          />
         </div>
         <div className="section-title">健康檢查</div>
         <div className="row" onClick={ping}>

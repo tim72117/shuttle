@@ -9,6 +9,8 @@ package llm
 // 故要讓此 Go 版生效,server/.agents/assistant.md 必須移除(否則磁碟版會蓋過)。
 
 import (
+	"fmt"
+
 	"github.com/tim72117/want/pkg/agentreg"
 )
 
@@ -129,9 +131,14 @@ const addThought = `
 # 缺必要資訊時 → 用 ask_user 問,別猜
 
 任何情況下,若記錄所需的必要資訊缺漏(如住宿沒退房日),**優先呼叫 ` + "`ask_user`" + ` 請使用者透過 UI 補上,不要憑猜測填值,也不要謊稱已完成**。ask_user 是非同步的:呼叫後本輪結束,使用者補上後會再次觸發你。
+
+# 需要使用者從多個選項擇一時 → 用 ask_choice 問,別用文字列點
+
+當需要讓使用者從多個選項中選一個時(如多個房型、多個候選行程擇一等情境),呼叫 ` + "`ask_choice`" + ` 請使用者透過 UI 選單挑選,**不要用文字把選項列出來請使用者用文字回覆**。ask_choice 同樣是非同步的:呼叫後本輪結束,使用者選定後會再次觸發你。
 `
 
 // queryThought 情況 B:查詢條目並回答。
+// 內含一個 %s 佔位符,執行期由 langName() 代入使用者設定的回答語言(如「繁體中文」/「English」)。
 const queryThought = `
 # 情況 B:提問 →  用 entry_query 查條目再回答
 
@@ -144,18 +151,19 @@ const queryThought = `
   - 沒有明確時間範圍(如「我有哪些待辦?」)→ ` + "`from`" + ` / ` + "`to`" + ` 都留空字串,查全部。
 - **只根據查到的條目回答,不要編造。**
 - 查到條目後,**每一筆條目各呼叫一次 ` + "`entry_present`" + ` 工具**傳給前端(有 3 筆就呼叫 3 次),前端會把它們匯整成卡片列表顯示。直接用查到的條目時間,不要自己換算。
-- 文字回答用繁體中文簡潔帶過即可(如「以下是你這週的安排:」),條目細節交給 ` + "`entry_present`" + ` 的卡片呈現,不必在文字裡重複列出每一筆。
+- 文字回答用%s簡潔帶過即可(如「以下是你這週的安排:」),條目細節交給 ` + "`entry_present`" + ` 的卡片呈現,不必在文字裡重複列出每一筆。
 - 查無條目時,不呼叫 ` + "`entry_present`" + `,如實說明「這段期間沒有記錄的安排」,不要硬湊答案。
 `
 
 // recommendThought 情況 D:推薦附近景點。
+// 內含一個 %s 佔位符,執行期由 langName() 代入使用者設定的回答語言(如「繁體中文」/「English」)。
 const recommendThought = `
 呼叫 ` + "`recommend_nearby`" + ` 工具時:
 
 - ` + "`place`" + ` 帶查詢中心點,盡量包含城市名以提高定位準確度(如使用者提到某個既有條目的地點,可用該地點當中心)。
 - ` + "`category`" + ` 依使用者需求填「景點」「餐廳」「咖啡廳」「博物館」「住宿」等,沒特別要求就留空查綜合推薦。
 - 工具會回傳一份候選清單(名稱、地址、類型),已自動顯示成前端卡片,**不需要你再把每一筆細節複述一次**。
-- 文字回覆用繁體中文簡潔帶過即可(如「幫你找了附近幾個推薦景點,參考下面的卡片」),不必逐筆列出名稱地址。
+- 文字回覆用%s簡潔帶過即可(如「幫你找了附近幾個推薦景點,參考下面的卡片」),不必逐筆列出名稱地址。
 - 若使用者接著想把某個候選寫入行程,依情況 A 的流程呼叫 ` + "`entry_add`" + `(地點用該候選的名稱或地址)。
 `
 
@@ -195,16 +203,79 @@ const styleThought = `
 - 貼心、簡潔,可靠的私人助理。
 - 不編造、不誇大,忠於使用者實際發送的內容。`
 
+// thoughtTemplate 是尚未代入語言的完整 prompt 模板。
+// queryThought、recommendThought 各含一個 %s(依串接順序:先 query 後 recommend),
+// 執行期由 buildThought() 用 langName() 把兩處都代入使用者設定的回答語言。
+const thoughtTemplate = introThought + addThought + queryThought + recommendThought + updateThought + deleteThought + styleThought
+
+// defaultAssistLang 是未帶語言參數時的後備語言(維持改動前的行為:固定繁體中文)。
+const defaultAssistLang = "zh-TW"
+
+// langName 把語言代碼轉成給 LLM 看的語言名稱字串。
+// 未知代碼一律退回繁體中文(維持現有行為不變的安全預設)。
+func langName(lang string) string {
+	switch lang {
+	case "en":
+		return "English"
+	case "zh-TW", "":
+		return "繁體中文"
+	default:
+		return "繁體中文"
+	}
+}
+
+// buildThought 依語言代碼組出這次要用的完整 system prompt 文字。
+// 只是把 thoughtTemplate 的兩個 %s 換成對應語言名稱,不含 want 的通用段落
+// (header/env/工具規則等,同原本 PromptBuilder 閉包的設計)。
+func buildThought(lang string) string {
+	name := langName(lang)
+	return fmt.Sprintf(thoughtTemplate, name, name)
+}
+
+// BuildThought 是 buildThought 的公開版本,回傳依語言代碼組好的完整
+// system prompt 文字。
+//
+// 這是專門給 cmd/dumpthought(shuttle 專案內部的一次性命令列小工具,同屬
+// shuttle module,合法呼叫同 module 內其他套件的公開函式)取用正式 thought
+// 內容用的,讓 dumpthought 印到 stdout 供外部獨立工具(agentbench)透過子程序
+// 呼叫的方式取得——不是給 agentbench 直接 import 用(agentbench 依專案架構
+// 原則完全不 import internal/llm,詳見 cmd/agentbench 的說明)。
+func BuildThought(lang string) string {
+	return buildThought(lang)
+}
+
+// BuildPromptBuilder 依語言代碼產生一份「本次呼叫要用」的 PromptBuilder。
+// 供 want_analyzer.go 在每次 Assist/Answer 呼叫、Submit 前透過
+// orch.SetPromptBuilder(...) 動態換掉 assistant role 的 system prompt。
+//
+// 技術背景:want 的 Run 迴圈每輪都重新呼叫 PromptBuilder.Build(agent, ctx)
+// (internal/query.go Agent.Run),而 RunAgent(internal/run_agent.go)在每次
+// 推論週期都重新 NewAgent(...)並優先採用 toolUseContext.GetPromptBuilder()
+// (若非 nil,覆蓋 role 定義的 per-role PromptBuilder)。故 orchestrator 層級
+// 呼叫 SetPromptBuilder 可以在「執行期、每次呼叫」動態覆寫 system prompt,
+// 不需要更動 orchestrator 初始化流程,也不用改動 want 套件本身。
+func BuildPromptBuilder(lang string) agentreg.PromptBuilder {
+	prompt := buildThought(lang)
+	return agentreg.PromptBuilderFunc(func(a *agentreg.Agent, c *agentreg.ToolUseContext) string {
+		return prompt
+	})
+}
+
 func init() {
 	agentreg.Register(agentreg.DefaultLoader(), "assistant", &agentreg.AgentDefinition{
 		Role:      "assistant",
-		Tools:     []string{"entry_add", "entry_query", "entry_present", "entry_update", "entry_delete", "geocode", "recommend_nearby", "ask_user", "task_plan"},
+		Tools:     []string{"entry_add", "entry_query", "entry_present", "entry_update", "entry_delete", "geocode", "recommend_nearby", "ask_user", "ask_choice", "task_plan"},
 		WhenToUse: "頻道中的生活記事助理。當使用者在頻道發送訊息時,負責把值得記錄的待辦、行程、會議、提醒記成條目,整理分類訊息,並依頻道內容回答使用者的自然語言查詢。",
-		Thought:   introThought + addThought + queryThought + recommendThought + updateThought + deleteThought + styleThought,
+		Thought:   buildThought(defaultAssistLang),
 
 		// 方式 C:閉包當策略,完全取代(同 want/web/agents/shopkeeper.go)。
 		// 刻意不呼叫 DefaultPromptBuilder,故不串接 want 通用段落(header/env/工具規則等);
 		// 最終 system prompt 僅由本 role 的 Thought(a.SystemPrompt)組成。
+		//
+		// 這是「未指定語言」時的後備(role 註冊時期固定的預設值,等同改動前行為)。
+		// 實際每次 Assist/Answer 呼叫時,want_analyzer.go 會呼叫 BuildPromptBuilder(lang)
+		// 產生本次專用的 PromptBuilder,透過 orch.SetPromptBuilder(...) 動態覆寫掉這裡,
+		// 讓 system prompt 依呼叫當下的語言參數變化。
 		PromptBuilder: agentreg.PromptBuilderFunc(func(a *agentreg.Agent, c *agentreg.ToolUseContext) string {
 			return a.SystemPrompt
 		}),

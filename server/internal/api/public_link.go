@@ -127,6 +127,7 @@ func (s *Server) handlePublicAssist(w http.ResponseWriter, r *http.Request) {
 
 	var body struct {
 		Text string `json:"text"`
+		Lang string `json:"lang,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Text == "" {
 		writeErr(w, http.StatusBadRequest, "invalid_body", "text 必填")
@@ -138,6 +139,7 @@ func (s *Server) handlePublicAssist(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotImplemented, "not_supported", "此伺服器不支援 assist")
 		return
 	}
-	res := assistant.AssistForSession("public:"+token, info.ChannelID, "", body.Text, nil)
+	// Lang 為使用者設定的 LLM 回答語言偏好("zh-TW"/"en"),空字串由下游視為預設(繁體中文)。
+	res := assistant.AssistForSession("public:"+token, info.ChannelID, "", body.Text, body.Lang, nil)
 	writeJSON(w, http.StatusOK, res)
 }

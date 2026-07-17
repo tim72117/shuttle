@@ -302,11 +302,43 @@ body {
   flex: 0 0 auto;
 }
 
+/* avatarColor 未設定時的低對比 fallback:底色貼近側欄背景(--ios-card),
+   用分隔線色(--ios-sep)做出一階深淺差,融入背景又保留圓圈輪廓;
+   文字改用灰棕字色(--ios-gray)維持可讀對比,避免沿用預設白字而看不清。 */
+.avatar-empty {
+  background: var(--ios-sep);
+  color: var(--ios-gray);
+}
+
 .section-title {
   padding: 18px 16px 6px;
   font-size: 15px;
   color: var(--ios-gray);
   text-transform: uppercase;
+}
+
+/* 「開發」可折疊區塊觸發列(SettingsDialog,見 App.tsx):視覺比照 .section-title
+   (同樣大寫灰字、字級),但改為可點擊列,故補上 flex 排版放 ChevronDown 圖示、
+   cursor: pointer,並沿用 .row:active 的按壓回饋色,讓互動感跟同一個 dialog
+   裡其他可點擊列(.row)一致。圖示依展開狀態旋轉 180 度,是常見折疊區塊慣例。 */
+.dev-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 16px 6px;
+  font-size: 15px;
+  color: var(--ios-gray);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.dev-section-toggle:active {
+  background: #f5f5f7;
+}
+.dev-section-chevron {
+  transition: transform 0.15s;
+}
+.dev-section-chevron.open {
+  transform: rotate(180deg);
 }
 
 /* ---- 聊天 ---- */
@@ -578,6 +610,10 @@ body {
 }
 .role-chip.static {
   cursor: default;
+}
+.role-chip:focus-visible {
+  outline: 2px solid var(--ios-blue);
+  outline-offset: 2px;
 }
 
 /* 頻道列表：對齊 timeline 設計語言 */
@@ -890,6 +926,10 @@ body {
 .tl-nav-btn:hover {
   background: var(--ios-blue);
   color: #fff;
+}
+.tl-nav-btn:focus-visible {
+  outline: 2px solid var(--ios-blue);
+  outline-offset: 2px;
 }
 
 /* 主線 entry 卡：橘色左邊框 */
@@ -1218,6 +1258,10 @@ body {
   background: #D9C4AA;
   cursor: default;
 }
+.composer button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
 
 /* 功能鈕(推薦/對話):跟送出鈕同尺寸圓形,底色改用卡片白+邊框,
    跟送出鈕(強調色實心)區分「功能切換」與「送出動作」的視覺層級。 */
@@ -1286,6 +1330,10 @@ body {
 .btn-primary:active:not(:disabled) {
   opacity: 0.85;
 }
+.btn-primary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
 
 /* 一般輸入框(設定 / 查詢) */
 .field {
@@ -1300,12 +1348,82 @@ body {
   color: var(--ios-gray);
   margin-bottom: 4px;
 }
-.field input {
+.field input,
+.field select {
   width: 100%;
   border: none;
   font-size: 17px;
   outline: none;
   font-family: var(--mono);
+}
+
+/* LLM 回答語言下拉選單(LangSelect,見 App.tsx):自訂觸發列取代原生 <select>。
+   觸發列排版比照 .field input(同樣字級/無外框),讓它跟同一個 .field 容器裡
+   其他欄位視覺一致;展開的選項清單比照 .desktop-user-popover 的浮層視覺
+   (卡片背景、圓角、陰影),讓它看起來像浮在上層的選單而非內嵌頁面元素。 */
+.lang-select {
+  position: relative;
+}
+.lang-select-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  outline: none;
+  font: inherit;
+  font-size: 17px;
+  font-family: var(--mono);
+  color: var(--color-dark);
+  cursor: pointer;
+  text-align: left;
+}
+.lang-select-trigger:focus-visible {
+  outline: 2px solid var(--ios-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.lang-select-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--ios-card);
+  border: 1px solid var(--ios-sep);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  z-index: 10;
+  transition: opacity 0.1s ease;
+}
+.lang-select-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 0.5px solid var(--ios-sep);
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  color: var(--color-dark);
+  cursor: pointer;
+  text-align: left;
+}
+.lang-select-option:last-child {
+  border-bottom: none;
+}
+.lang-select-option:hover {
+  background: var(--ios-bg);
+}
+.lang-select-option:focus-visible {
+  outline: 2px solid var(--ios-blue);
+  outline-offset: -2px;
 }
 
 .empty {
@@ -1369,6 +1487,10 @@ pre {
 }
 .share-link-copy:active {
   background: var(--ios-sep);
+}
+.share-link-copy:focus-visible {
+  outline: 2px solid var(--ios-blue);
+  outline-offset: 2px;
 }
 
 /* 分享頁 toggle 列 */
@@ -1438,6 +1560,10 @@ pre {
 .btn-danger:active {
   opacity: 0.75;
 }
+.btn-danger:focus-visible {
+  outline: 2px solid var(--ios-red);
+  outline-offset: 2px;
+}
 
 /* ---- 帳號設定：token display ---- */
 .token-box {
@@ -1469,6 +1595,10 @@ pre {
 }
 .btn-secondary:active {
   opacity: 0.75;
+}
+.btn-secondary:focus-visible {
+  outline: 2px solid var(--ios-blue);
+  outline-offset: 2px;
 }
 
 /* ---- ask_user 詢問框:底部彈出 sheet(agent 缺資訊時請使用者補上) ---- */
@@ -1521,6 +1651,51 @@ pre {
   font-size: 14px;
   color: var(--ios-red);
   text-align: center;
+}
+/* ask_choice 選單:一排可捲動的選項按鈕,每個選項是主標題 + 一行描述(可選)。
+   視覺語言比照 .list/.row(卡片背景、分隔線),但改成可點的完整按鈕。 */
+.ask-choice-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 46vh;
+  overflow-y: auto;
+  background: var(--ios-card);
+  border-radius: 12px;
+  border: 1px solid var(--ios-sep);
+}
+.ask-choice-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 0.5px solid var(--ios-sep);
+  background: transparent;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.ask-choice-option:last-child {
+  border-bottom: none;
+}
+.ask-choice-option:active {
+  background: #f5f5f7;
+}
+.ask-choice-option:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.ask-choice-option-title {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--color-dark);
+}
+.ask-choice-option-desc {
+  font-size: 14px;
+  color: var(--ios-gray);
 }
 /* 按鈕列:取消 / 確定 並排,各佔一半,大面積好點 */
 .ask-user-actions {
@@ -1616,6 +1791,10 @@ pre {
 .desktop-channel-item:hover {
   background: var(--ios-bg);
 }
+.desktop-channel-item:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
 .desktop-channel-item.active {
   background: var(--color-accent);
 }
@@ -1663,6 +1842,10 @@ pre {
 .desktop-user-trigger:hover {
   background: var(--ios-bg);
 }
+.desktop-user-trigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
 .desktop-user-trigger .name {
   font-size: 14px;
   font-weight: 500;
@@ -1689,6 +1872,33 @@ pre {
 }
 .desktop-user-popover .section-title:first-child {
   padding-top: 12px;
+}
+/* 已登入時的精簡選單項目(設定/登出),取代原本整段 SettingsScreen 內容 */
+.desktop-user-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+.desktop-user-menu-item:hover {
+  background: var(--ios-bg);
+}
+.desktop-user-menu-item:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.desktop-user-menu-item:first-child {
+  margin-top: 4px;
+}
+.desktop-user-menu-item:last-child {
+  margin-bottom: 4px;
 }
 
 /* 右側主要區塊：寬螢幕時不拉滿,限制最大寬度並置中,避免時間軸/聊天內容被拉得過寬 */
@@ -1888,6 +2098,23 @@ pre {
   .rp-modal {
     animation: none;
   }
+}
+
+/* ---- 桌面版「設定」dialog(SettingsDialog,見 App.tsx):骨架沿用
+   .rp-modal-backdrop/.rp-modal(遮罩、置中、圓角、陰影、進場動畫皆相同),
+   只疊加覆寫 position 為 fixed。原因:SettingsDialog 是從 DesktopContent
+   頂層(.desktop-layout 的兄弟節點)渲染,而非像 RecommendedPlacesModal 那樣
+   渲染在有 position: relative 的 .desktop-main 內部——若沿用 absolute+inset:0,
+   會相對到更上層(甚至沒有 relative 祖先時相對 initial containing block),
+   且 .desktop-layout 本身設有 overflow: hidden,side bar 只有 272px 寬,
+   都可能讓彈窗被裁切或跑位。改用 fixed 可確保無論掛在哪一層 DOM,
+   都能穩定蓋滿整個視窗、疊在桌面版佈局最上層。 ---- */
+.settings-dialog-backdrop {
+  position: fixed;
+  z-index: 200;
+}
+.settings-dialog {
+  max-width: 520px;
 }
 
 /* ---- 推薦景點地圖(RecommendedPlacesMap,UI 試做用):Maps JavaScript API

@@ -135,9 +135,13 @@ type AssistResult struct {
 //   - 設 record context → agent 若 call record_entry,Entry 自動關聯到 messageID
 //   - 跑完後以 wanttools.EmitCount() 判斷究竟記錄了還是只回答了
 //
+// lang 是使用者設定的回答語言偏好("zh-TW"/"en"),空字串視為預設(繁體中文);
+// 呼叫 BuildPromptBuilder(lang) 產生本次專用的 system prompt,在 Submit 前
+// 透過 orch.SetPromptBuilder(...) 動態換掉,讓 LLM 依此次的語言設定作答
+// (見 assistant_agent.go BuildPromptBuilder 的技術說明)。
 // linkMessage:agent 記錄了條目時,寫入來源 message 並把它與本次 emit 的
 // entry(參數 entryIDs)建立多對多關聯。只回答時不呼叫。由 api 層提供(持有 store)。
-func (w *WantAnalyzer) Assist(channelID, messageID, text string, linkMessage func(entryIDs []string) error) AssistResult {
+func (w *WantAnalyzer) Assist(channelID, messageID, text, lang string, linkMessage func(entryIDs []string) error) AssistResult {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -146,6 +150,9 @@ func (w *WantAnalyzer) Assist(channelID, messageID, text string, linkMessage fun
 	// 輔助資訊(channelID/messageID)透過 SessionEnvs 隨 ToolUseContext 傳遞給工具,
 	// 不進送給 LLM 的 prompt,也不經過任何套件級全域變數。
 	w.orch.SetSessionEnvs(map[string]string{"channelID": channelID, "messageID": messageID})
+	// 本次呼叫要用的 system prompt(依語言動態組裝);w.mu 已序列化所有呼叫,
+	// 此處「設定 → Submit → 等待完成」不會與其他呼叫交錯覆寫彼此的 PromptBuilder。
+	w.orch.SetPromptBuilder(BuildPromptBuilder(lang))
 
 	state := wantui.NewCommonInferenceState()
 	var mu sync.Mutex
@@ -217,7 +224,9 @@ func (w *WantAnalyzer) Assist(channelID, messageID, text string, linkMessage fun
 // (不用 citeEntries 關鍵字比對,也不把 pool 塞進 prompt)。
 // 跑完用 Presented() 取 agent 呈現的結構化條目,確保卡片與文字來自同一判斷。
 // channelID 必填:query_entries 工具靠 SessionEnvs 得知要查哪個頻道。
-func (w *WantAnalyzer) Answer(channelID, question string) model.SearchAnswer {
+// lang 是使用者設定的回答語言偏好("zh-TW"/"en"),空字串視為預設(繁體中文);
+// 用法同 Assist,見該處註解與 assistant_agent.go BuildPromptBuilder 的技術說明。
+func (w *WantAnalyzer) Answer(channelID, question, lang string) model.SearchAnswer {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -227,6 +236,8 @@ func (w *WantAnalyzer) Answer(channelID, question string) model.SearchAnswer {
 	defer wanttools.RecordUnlock()
 	// 讓 query_entries 知道查哪個頻道(同 Assist 路徑;查詢不關聯 message,故不設 messageID)。
 	w.orch.SetSessionEnvs(map[string]string{"channelID": channelID})
+	// 本次呼叫要用的 system prompt(依語言動態組裝),同 Assist 的做法。
+	w.orch.SetPromptBuilder(BuildPromptBuilder(lang))
 
 	state := wantui.NewCommonInferenceState()
 	var mu sync.Mutex

@@ -66,20 +66,21 @@ func (p *WantPool) For(sessionID string) *WantAnalyzer {
 // ---- Analyzer interface:無 session 資訊的呼叫路徑轉發到共用實例 ----
 // 讓 WantPool 可直接當成 Analyzer 注入。
 
-func (p *WantPool) Answer(channelID, question string) model.SearchAnswer {
-	return p.For("").Answer(channelID, question)
+func (p *WantPool) Answer(channelID, question, lang string) model.SearchAnswer {
+	return p.For("").Answer(channelID, question, lang)
 }
 
 // AssistForSession 依 session 取 analyzer,統一處理 owner 輸入(LLM 自主判斷回答/記錄)。
 // 提問時 agent 自己用 query_entries 工具查條目,無需傳入頻道訊息。
+// lang 是使用者設定的回答語言偏好("zh-TW"/"en"),空字串視為預設(繁體中文)。
 // linkMessage:當 agent 決定「記錄」時,寫入來源 message 並與本次 emit 的
 // entry(entryIDs)建立多對多關聯;agent 只回答時不會被呼叫。
-func (p *WantPool) AssistForSession(sessionID, channelID, messageID, text string, linkMessage func(entryIDs []string) error) AssistResult {
-	return p.For(sessionID).Assist(channelID, messageID, text, linkMessage)
+func (p *WantPool) AssistForSession(sessionID, channelID, messageID, text, lang string, linkMessage func(entryIDs []string) error) AssistResult {
+	return p.For(sessionID).Assist(channelID, messageID, text, lang, linkMessage)
 }
 
 // Assistant 是「統一處理 owner 輸入,LLM 自主判斷回答或記錄」的能力。
 // 只有 want 引擎(WantPool)實作;規則式分析器不支援(api handler 以斷言判斷)。
 type Assistant interface {
-	AssistForSession(sessionID, channelID, messageID, text string, linkMessage func(entryIDs []string) error) AssistResult
+	AssistForSession(sessionID, channelID, messageID, text, lang string, linkMessage func(entryIDs []string) error) AssistResult
 }

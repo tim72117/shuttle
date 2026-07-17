@@ -33,7 +33,7 @@ func New(st *store.Store, an llm.Analyzer, signer *auth.Signer, devMode bool) *S
 		signer:    signer,
 		hub:       newHub(),
 		devMode:   devMode,
-		guestUser: model.User{ID: "usr_me", Name: "我", AvatarColor: "#4A90D9"},
+		guestUser: model.User{ID: "usr_me", Name: "我", AvatarColor: "#8C7B6A"},
 	}
 }
 
@@ -52,6 +52,12 @@ func (s *Server) NotifyEntryUpdating(channelID, entryID string) {
 // 讓前端開啟對應 UI(如日期選擇器)請使用者補上缺失資訊。
 func (s *Server) NotifyAskUser(channelID, askType, prompt string) {
 	s.hub.Broadcast(channelID, map[string]any{"event": "ask_user", "channelID": channelID, "askType": askType, "prompt": prompt})
+}
+
+// NotifyAskChoice 廣播 ask_choice(帶 prompt/options)給指定頻道的訂閱者(供 wanttools 呼叫),
+// 讓前端開啟選單 UI 請使用者從 options 中選一個。
+func (s *Server) NotifyAskChoice(channelID, prompt string, options []map[string]any) {
+	s.hub.Broadcast(channelID, map[string]any{"event": "ask_choice", "channelID": channelID, "prompt": prompt, "options": options})
 }
 
 // NotifyTaskCreated 廣播 task_created(帶 taskID/date/text/kind)給指定頻道的訂閱者(供 wanttools 呼叫),
@@ -355,6 +361,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	var body struct {
 		Question string `json:"question"`
+		Lang     string `json:"lang,omitempty"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -366,7 +373,8 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	// 不再由 api 撈 pool:agent 依 assistant.md 自己呼叫 query_entries 查條目
 	// (用 channelID 定位頻道),再以 present_entries 呈現相關條目。
-	answer := s.analyzer.Answer(id, q)
+	// Lang 為使用者設定的 LLM 回答語言偏好("zh-TW"/"en"),空字串由下游視為預設(繁體中文)。
+	answer := s.analyzer.Answer(id, q, body.Lang)
 	writeJSON(w, http.StatusOK, answer)
 }
 
@@ -392,6 +400,7 @@ func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {
 
 	var body struct {
 		Text string `json:"text"`
+		Lang string `json:"lang,omitempty"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -409,7 +418,8 @@ func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {
 
 	// linkMessage 傳 nil:不再於後端寫入 message / 建立 entry↔message 關聯。
 	// 原話與其關聯改由各裝置端自行保存。
-	res := assistant.AssistForSession(user.ID, id, msgID, text, nil)
+	// Lang 為使用者設定的 LLM 回答語言偏好("zh-TW"/"en"),空字串由下游視為預設(繁體中文)。
+	res := assistant.AssistForSession(user.ID, id, msgID, text, body.Lang, nil)
 
 	if res.Kind == "error" {
 		writeErr(w, http.StatusInternalServerError, "assist_failed", res.Text)
