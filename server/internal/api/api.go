@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/tim72117/shuttle/internal/auth"
-	"github.com/tim72117/shuttle/internal/llm"
-	"github.com/tim72117/shuttle/internal/model"
-	"github.com/tim72117/shuttle/internal/store"
-	"github.com/tim72117/shuttle/internal/tripsvc"
+	"github.com/tim72117/tripace/internal/auth"
+	"github.com/tim72117/tripace/internal/llm"
+	"github.com/tim72117/tripace/internal/model"
+	"github.com/tim72117/tripace/internal/store"
+	"github.com/tim72117/tripace/internal/tripsvc"
 )
 
 type Server struct {
