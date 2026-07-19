@@ -1,0 +1,156 @@
+# clienttools.yaml — POC 用工具定義:操作一份「只存在前端記憶體」的旅程 entry 清單。
+#
+# appId 固定為 "clienttools":web/src/ClientToolsDemo.tsx(DebugApp.tsx 的試做
+# 區塊)連線時,hello.appId 帶這個值,後端 clientToolsSession.handleHello
+# (server/internal/api/clienttools_ws.go)依此從 toolschema.Registry 解析出
+# 下面這組工具清單回傳給前端(ack.toolNames),同時 llm.NewClientToolsAnalyzer
+# (server/internal/llm/clienttools_agent.go)註冊的獨立 agent role 白名單也
+# 鎖定只暴露這幾個工具給 LLM,不會跟正式的 assistant agent
+# (server/internal/llm/assistant_agent.go)或其 entry_add/entry_query 等
+# 工具混在一起。
+#
+# 型別(kind)怎麼選,是這份試做的核心設計決定:
+# - trip_entry_add / trip_entry_list  → query:LLM 需要拿到「真正發生的結果」
+#   才能接下去做事——新增後要知道新 entry 的 id 才能之後引用它做刪除/修改;
+#   查詢清單則本來就是要把前端資料讀回給 LLM 看。兩者都必須阻塞等前端真的
+#   把資料回傳,不能只是「轉發出去就當作完成」。
+# - trip_entry_delete / trip_entry_update → action:前端實際執行的細節(改了
+#   哪些欄位、剩下幾筆)LLM 不需要逐一知道,只需要知道「有沒有成功執行」,
+#   用 forwardingTool 的 fire-and-forget 語意(見 server/internal/clienttools/
+#   tool.go)已經足夠——但仍然是阻塞等前端回報成功/失敗,不是送出就不管。
+appId: clienttools
+thought: |
+  你是一個嵌入在網頁裡的旅程小幫手。使用者不是在跟你聊天,而是在對這個網頁下指令。
+  網頁上有一份旅程 entry 清單(只存在使用者瀏覽器的記憶體裡,尚未存進任何後端資料庫)。
+
+  當使用者的訊息要求新增/刪除/修改清單裡的項目,或想知道清單目前有什麼時,
+  呼叫對應的單一工具去操作或查詢它——實際執行的是網頁,不是你。
+
+  - 使用者要「新增」一筆行程時,呼叫 trip_entry_add。新增前不需要先查清單。
+  - 使用者要「刪除」或「修改」某一筆時,若你不確定正確的 id,先呼叫
+    trip_entry_list 查目前清單,找到對應的那一筆再呼叫 trip_entry_delete /
+    trip_entry_update。不要憑猜測編造 id。
+  - 使用者單純問「現在清單裡有什麼」時,呼叫 trip_entry_list 查詢,再用查到
+    的資料回答,不要編造內容。
+
+  完成工具呼叫後,用簡短的一句話告訴使用者做了什麼(例如「已新增『東京晴空塔』
+  到 7/18」),不要聲稱自己做了工具沒有實際完成的事,也不要要求使用者等待
+  ——工具呼叫本身就是動作的執行。
+
+tools:
+  - name: trip_entry_add
+    description: >-
+      在前端的旅程 entry 清單新增一筆新項目。使用者想加入一筆新的行程/景點/
+      活動時呼叫。成功後會回傳新項目的 id,之後若要刪除或修改這筆,要用這個 id。
+    kind: query
+    parameters:
+      type: object
+      description: 新增一筆旅程 entry 所需的欄位。
+      properties:
+        title:
+          type: string
+          description: 項目標題,例如「東京晴空塔」、「築地市場早餐」。
+        date:
+          type: string
+          description: 項目日期,格式 'YYYY-MM-DD'。使用者說「明天」「後天」等相對日期時,自行換算成絕對日期後填入。
+        time:
+          type: string
+          description: 項目時刻,24 小時制 'HH:MM'。使用者沒有提到時刻時留空字串(表示全天/未定時)。
+        note:
+          type: string
+          description: 補充備註,例如地點、注意事項。沒有時留空字串。
+      required:
+        - title
+        - date
+    returns:
+      type: object
+      description: 前端新增成功後回報的結果。
+      properties:
+        id:
+          type: string
+          description: 新項目的 id,之後刪除/修改要用這個。
+        title:
+          type: string
+          description: 實際存入的標題(回顯確認)。
+        date:
+          type: string
+          description: 實際存入的日期(回顯確認)。
+
+  - name: trip_entry_delete
+    description: >-
+      從前端的旅程 entry 清單刪除一筆項目。需要先知道正確的 id
+      ——不確定時先呼叫 trip_entry_list 查詢。
+    kind: action
+    parameters:
+      type: object
+      description: 要刪除的項目 id。
+      properties:
+        id:
+          type: string
+          description: 要刪除的項目 id(呼叫 trip_entry_list 或先前 trip_entry_add 的回傳取得)。
+      required:
+        - id
+
+  - name: trip_entry_update
+    description: >-
+      修改前端旅程 entry 清單中既有一筆項目的欄位。只需傳入要改的欄位,
+      其餘留空字串表示不修改。需要先知道正確的 id
+      ——不確定時先呼叫 trip_entry_list 查詢。
+    kind: action
+    parameters:
+      type: object
+      description: 要修改的項目 id 與要更新的欄位。
+      properties:
+        id:
+          type: string
+          description: 要修改的項目 id。
+        title:
+          type: string
+          description: 新標題。留空字串表示不修改。
+        date:
+          type: string
+          description: 新日期,格式 'YYYY-MM-DD'。留空字串表示不修改。
+        time:
+          type: string
+          description: 新時刻,24 小時制 'HH:MM'。留空字串表示不修改。
+        note:
+          type: string
+          description: 新備註。留空字串表示不修改。
+      required:
+        - id
+
+  - name: trip_entry_list
+    description: >-
+      查詢前端旅程 entry 清單目前的完整內容。使用者問「清單裡有什麼」,
+      或你需要先找到正確 id 才能刪除/修改某一筆時呼叫。
+    kind: query
+    parameters:
+      type: object
+      description: 無參數,直接呼叫查詢目前完整清單。
+      properties: {}
+    returns:
+      type: object
+      description: 前端回報的目前清單內容。
+      properties:
+        entries:
+          type: array
+          description: 目前清單裡的每一筆項目。
+          items:
+            type: object
+            description: 一筆旅程 entry。
+            properties:
+              id:
+                type: string
+                description: 項目 id。
+              title:
+                type: string
+                description: 項目標題。
+              date:
+                type: string
+                description: 項目日期。
+              time:
+                type: string
+                description: 項目時刻,可能為空字串。
+              note:
+                type: string
+                description: 備註,可能為空字串。

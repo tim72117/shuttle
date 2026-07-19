@@ -13,6 +13,7 @@ import (
 	"github.com/tim72117/tripace/internal/llm"
 	"github.com/tim72117/tripace/internal/model"
 	"github.com/tim72117/tripace/internal/store"
+	"github.com/tim72117/tripace/internal/toolschema"
 	"github.com/tim72117/tripace/internal/tripsvc"
 )
 
@@ -25,6 +26,14 @@ type Server struct {
 	devMode bool
 	// 未登入時的預設使用者(維持可跳過登入的體驗)。
 	guestUser model.User
+
+	// clientTools* 是「LLM 呼叫前端 tool」試做(POC)專用的狀態,與上面 store/
+	// analyzer/hub 等正式對話流程完全分離——見 clienttools_http.go/
+	// clienttools_ws.go。nil(未呼叫 EnableClientTools)時,對應的
+	// /internal/clienttools/* 端點回 503,不影響其餘路由。
+	clientToolsRegistry *toolschema.Registry
+	clientToolsAnalyzer *llm.ClientToolsAnalyzer
+	clientToolsSessions *clientToolsSessions
 }
 
 func New(st *store.Store, an llm.Analyzer, signer *auth.Signer, devMode bool) *Server {
@@ -36,6 +45,18 @@ func New(st *store.Store, an llm.Analyzer, signer *auth.Signer, devMode bool) *S
 		devMode:   devMode,
 		guestUser: model.User{ID: "usr_me", Name: "我", AvatarColor: "#8C7B6A"},
 	}
+}
+
+// EnableClientTools wires the "LLM calls a frontend tool" POC's
+// /internal/clienttools/* endpoints (see clienttools_http.go/
+// clienttools_ws.go). Optional and separate from New() (rather than a
+// constructor parameter) so main.go can call it only when a real want
+// analyzer is available — this POC has no meaning under -llm mock, and
+// New() itself has no such precondition for its other args.
+func (s *Server) EnableClientTools(registry *toolschema.Registry, analyzer *llm.ClientToolsAnalyzer) {
+	s.clientToolsRegistry = registry
+	s.clientToolsAnalyzer = analyzer
+	s.clientToolsSessions = newClientToolsSessions()
 }
 
 // NotifyEntriesUpdated 廣播 entries_updated 給指定頻道的訂閱者(供 wanttools 呼叫)。
@@ -127,6 +148,17 @@ func (s *Server) Routes() http.Handler {
 	internalMux.HandleFunc("GET /internal/channels/{id}/trips", s.handleInternalListTrips)
 	internalMux.HandleFunc("GET /internal/channels/{id}/trips/{tripID}/entries", s.handleInternalTripEntries)
 	internalMux.HandleFunc("DELETE /internal/channels/{id}/entries", s.handleInternalReset)
+
+	// clienttools — 「LLM 呼叫前端 tool」試做(POC)專用端點,見
+	// clienttools_http.go/clienttools_ws.go。與上面既有 /internal/* 端點
+	// 一樣掛在 internalAuth 之後(INTERNAL_API_TOKEN 未設時完全不受保護,
+	// 符合本試做「不需要驗證,僅本機試做用」的要求)。EnableClientTools
+	// 未呼叫時(main.go 未啟用或 want 分析器初始化失敗)這幾個 handler
+	// 內部會各自回 503,不需要在路由層額外判斷。
+	internalMux.HandleFunc("GET /internal/clienttools/ws", s.handleClientToolsWS)
+	internalMux.HandleFunc("POST /internal/clienttools/test-prompt", s.handleClientToolsTestPrompt)
+	internalMux.HandleFunc("GET /internal/clienttools/info", s.handleClientToolsInfo)
+
 	mux.Handle("/internal/", internalAuth(internalMux))
 
 	return logging(cors(mux))
