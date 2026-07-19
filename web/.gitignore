@@ -3,6 +3,10 @@ dist
 *.local
 .vite
 
+# TypeScript 增量編譯快取:每次 tsc 執行都會重新產生,內容跟本機環境/
+# 磁碟版本綁定,不應提交進版控。
+tsconfig.tsbuildinfo
+
 # Playwright(tests/e2e-mock-llm.spec.ts)執行後產生的暫存輸出:失敗截圖、
 # trace.zip、HTML 報表。每次執行都會重新產生,不應提交進版控。
 test-results
