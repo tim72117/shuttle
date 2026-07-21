@@ -10,6 +10,7 @@ package llm
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/tim72117/want/pkg/agentreg"
 )
@@ -68,11 +69,63 @@ const introThought = `
 
 - 每完成一步(不論第一或第二層)就 ` + "`task_plan(action='complete', id=N)`" + ` 標記,隨時可 ` + "`action='list'`" + ` 看階層與進度。
 - 全部完成後 ` + "`task_plan(action='clear')`" + ` 清除。
-- **完成某第一層條目、實際寫入時呼叫 ` + "`entry_add`" + ` 要帶 ` + "`taskID=該第一層條目的 id`" + `**,讓前端把該條目的「新增中」佔位卡換成正式條目卡;與 task_plan 無關的一般記錄不帶 taskID。
+- **注意:` + "`trip_entry_add`" + `(取代原本 entry_add 的新增工具)沒有 ` + "`taskID`" + ` 欄位**,無法像以前一樣讓前端把「新增中」佔位卡自動換成正式條目卡——完成某第一層條目、實際呼叫 ` + "`trip_entry_add`" + ` 寫入時,不要帶 taskID 參數(這個工具沒有這個參數),單純呼叫並繼續用 ` + "`task_plan(action='complete', id=N)`" + ` 標記完成即可;佔位卡與正式卡的視覺銜接是已知限制,不在此次改動範圍內處理。
 - 簡單的單一請求不需要用 task_plan,直接處理即可。
 `
 
+// todayThought 提供「今天」的絕對日期基準點,供 trip_entry_add/
+// trip_entry_update 換算相對日期用(見 addThought 的說明)。含一個 %s,
+// 由 buildThought() 在執行期代入當下日期(time.Now(),格式 YYYY-MM-DD)。
+// entry_query 這類工具靠系統自動換算英文時間語詞不需要這個,但
+// trip_entry_add/trip_entry_update 的 date 欄位要求 LLM 自己給絕對日期,
+// 沒有這個基準點 LLM 換算相對日期(「明天」「下週一」等)會出錯。
+const todayThought = `
+# 今天
+
+今天的日期是 %s(格式 YYYY-MM-DD)。下面 ` + "`trip_entry_add`" + `/` + "`trip_entry_update`" + ` 的 ` + "`date`" + ` 欄位要填絕對日期,所有「明天」「下週一」「三天後」等相對日期,都要以此為基準自己換算成絕對日期,不能原樣照抄使用者的說法。
+`
+
+// keyThought 教 LLM 怎麼判斷/選用旅程清單的批次(key)——trip_entry_add/
+// trip_entry_update/trip_entry_list 都需要這個必填參數(見
+// server/tools/clienttools.yaml 開頭「多批次(key)支援」註解)。放在
+// addThought 之前,讓下面「情況 A」提到「見上方『批次(key)怎麼選』」時
+// 順序對得上。trip_entry_delete 不在白名單裡(見本檔案 init() 的說明),
+// 但這段仍適用其他三個工具。
+const keyThought = `
+# 批次(key)怎麼選
+
+旅程清單可能同時存在多批獨立的清單,各自用一個 key 字串識別。呼叫
+` + "`trip_entry_add`" + `/` + "`trip_entry_update`" + `/` + "`trip_entry_list`" + ` 前,先判斷這次要操作哪一批:
+
+- 若這次對話從頭到尾只在規劃單一趟行程,沿用同一個 key 即可,不必每次都查。
+- 若不確定使用者這次講的內容,是延續先前已經在記的某一批,還是全新的規劃
+  ——先呼叫 ` + "`trip_list_batches`" + ` 查目前有哪些批次(附摘要:筆數、
+  日期範圍、代表性標題),用摘要判斷:
+  - 時間、地點、主題與某個現存批次相符 → 沿用該批次的 key。
+  - 明顯是不同的規劃(不同地點/主題,或使用者說「另外規劃」「新的行程」)
+    → 自己取一個新的 key。
+- 自訂新 key 時用簡短語意化字串(英文或拼音,如 ` + "`tokyo_trip`" + `、
+  ` + "`osaka_2days`" + `),不要用中文或空白;無從判斷語意時退回時間戳記
+  格式(如 ` + "`20260721_1`" + `)避免撞名。
+- ` + "`trip_entry_add`" + ` 執行後的回傳一律包含這次用的 key——記住它,
+  同一輪對話裡後續若仍屬於同一批,直接沿用,不要重新臆測或詢問使用者。
+`
+
 // addThought 情況 A:新增條目。
+//
+// 注意(clienttools 化):entry_add 已換成 trip_entry_add——這是一個轉發到
+// 瀏覽器分頁 React state 執行的工具(不寫 Postgres,見 server/internal/
+// clienttools/tool.go),欄位比 entry_add 精簡很多(title/date/time/note,
+// 見 server/tools/clienttools.yaml),沒有 location/kind/taskID,date 也
+// 不是英文語詞而是要 LLM 自己換算好的絕對日期('YYYY-MM-DD')。以下規則已
+// 配合改寫;entry_query 仍是原本的查詢工具(未動),用來判斷新增/更新/跳過
+// 與地點所在區域,查到的結果仍可讀。
+//
+// 注意(多批次 key 化):trip_entry_add/trip_entry_update/trip_entry_list
+// 現在都多了一個必填的 key 參數,代表旅程清單分成哪一批(見
+// server/tools/clienttools.yaml 開頭「多批次(key)支援」註解)。以下
+// keyThought 段落教 LLM 怎麼判斷/選用 key,addThought/updateThought 的
+// 工具呼叫範例也都要帶上 key。
 const addThought = `
 # 行程更新方式
 ## 情況 A:要記的事項 →  依固定順序處理
@@ -81,79 +134,59 @@ const addThought = `
 
 ## 前置:先判斷這筆是「新增 / 更新 / 跳過」
 
-**寫入任何條目前,一律先用 ` + "`entry_query`" + ` 查該時間範圍的既有條目,比對使用者這筆是不是已經記過**(這次查詢也同時用來推斷地區,見下方步驟 1,不必查兩次):
+**寫入任何條目前,一律先用 ` + "`entry_query`" + ` 查該時間範圍的既有條目,比對使用者這筆是不是已經記過**(這次查詢也同時用來推斷地區,見下方地點處理,不必查兩次):
 - **完全相同**(同一件事、時間也一樣)→ **跳過,不要重複新增**,告訴使用者「這筆已經記錄過了」。
-- **同一件事但有差異**(如同一飯店但時間/地點改了)→ **改走情況 C 的更新流程**(` + "`entry_update`" + ` 既有那筆),不要新增出重複的第二筆。
-- **查無相符**→ 才是真正的新增,往下走固定三步驟。
+- **同一件事但有差異**(如同一飯店但時間/地點改了)→ **改走情況 C 的更新流程**(` + "`trip_entry_update`" + ` 既有那筆),不要新增出重複的第二筆。
+- **查無相符**→ 才是真正的新增,往下走 ` + "`trip_entry_add`" + `。
 
-## 固定三步驟(有 location 時):entry_query → geocode → entry_add
+## 地點處理(選用,不阻擋新增)
 
-若事項有 ` + "`location`" + `（地點不為空）,**先確認地點座標正確,再寫入條目**——避免記錄錯誤地點。依序:
+- 事項若有明確可定位的地點,可先用 ` + "`entry_query`" + ` 查到的鄰近條目推斷整體地區(如提到「宮古島」→ 地區鎖定宮古島),再呼叫 ` + "`geocode`" + `(城市名加在地點前組成查詢字串,如「宮古島希爾頓酒店」)確認地點,並在回覆中呈現給使用者參考。` + "`trip_entry_add`" + ` 沒有座標欄位,查到的座標不用回填工具,只是讓你回覆時能跟使用者確認地點正確——查不到座標不影響新增,直接繼續。
+- 若地點是一個區域(而非單一地點),用 ` + "`ask_user`" + ` 詢問需不需要推薦附近景點,使用者同意才呼叫 ` + "`recommend_nearby`" + `。
 
-1. ` + "`entry_query`" + `:查詢時間鄰近的既有條目,從條目內容推斷整體地區(如鄰近條目提到「宮古島」→ 地區鎖定宮古島)。若無鄰近條目或無法判斷,直接用 ` + "`location`" + ` 原文查詢。
-2. ` + "`geocode`" + `:把推斷出的城市名加在地點前組成查詢字串(如「宮古島希爾頓酒店」而非僅「希爾頓酒店」),查詢座標,取回第一筆結果並呈現給使用者。查詢失敗則跳過座標,仍繼續下一步。
-3. ` + "`entry_add`" + `:確認地點正確後才寫入條目。
+## trip_entry_add 欄位細節
 
-若事項**無** ` + "`location`" + `(如搭機、搭車等移動過程),跳過 1、2 兩步,直接呼叫 ` + "`entry_add`" + ` 寫入。
-
-## 地點處理
-
-- 有明確可以定位的地點時，使用 ` + "`geocode`" + ` 查座標,再寫入條目。若查不到座標,仍可寫入條目,但地點欄位留空。
-- 若是地點是一個區域，則使用` + "`ask_user`" + `詢問需不需要幫忙推薦附近景點，若使用者同意，則呼叫 ` + "`recommend_nearby`" + ` 工具查詢附近景點、餐廳、咖啡廳等,並呈現給使用者參考。
-
-## entry_add 欄位細節
-
-- ` + "`item`" + `:簡潔的事項描述(去掉時間部分),例如「開會討論 Q3 預算」。
-- **條目粒度**:有確定地點的事項各建一筆（方便補座標）；無確定地點或流水式行程（如「搭車移動」、「自由活動」、「逛市場午餐」）合併成一筆，` + "`location`" + ` 留空或填大範圍地名即可。
-- **時間拆成「日期」與「時刻」兩部分分開填**,各有專責,你不要自己算日期:
-  - ` + "`start`" + `:**日期**,用英文自然語言語詞(只給日期,不含時刻)。例:「下週一」→ ` + "`'next Monday'`" + `、「三天後」→ ` + "`'in 3 days'`" + `、「6月30」→ ` + "`'June 30'`" + `、「明天」→ ` + "`'tomorrow'`" + `。
-  - ` + "`startTime`" + `:**時刻**,24 小時制 ` + "`'HH:MM'`" + `,直接從訊息取。若使用者**沒有提供時刻**,不要留空,改依事項類型推斷合理時間:
-    - 早餐 → ` + "`07:00`" + `、午餐 → ` + "`12:00`" + `、晚餐 → ` + "`18:00`" + `
-    - 景點 / 活動（上午）→ ` + "`09:00`" + `、（下午）→ ` + "`14:00`" + `
-    - Check-in → ` + "`15:00`" + `、Check-out → ` + "`11:00`" + `
-    - 搭機去程 → ` + "`08:00`" + `、回程 → 依行程尾端常理判斷
-    - 完全無從判斷（如「自由活動」）→ 才留空（全日事件）
-  - **單一時間點**:填 ` + "`start`" + `(+ ` + "`startTime`" + `),` + "`end`" + ` / ` + "`endTime`" + ` 留空。
-  - **日期範圍**(如「6/30 到 7/2」):` + "`start`" + `、` + "`end`" + ` 各填日期語詞。
-  - **時刻範圍**(如「三點到五點開會」):同一天,` + "`startTime='15:00'`" + `、` + "`endTime='17:00'`" + `。
-  - 沒提到日期:` + "`start`" + ` 留空。
-
-> 分工:你把日期翻成英文語詞、時刻給 24 小時數字;日期換算由系統做,你不要自己算,才不會算錯。
-
-## 條目類型(kind)—— 依類型補對應欄位
-
-判斷事項屬於哪種類型時,填 ` + "`kind`" + `,系統會依類型做欄位檢查與補預設值:
-
-- **住宿 ` + "`kind='stay'`" + `**:入住=` + "`start`" + `、退房=` + "`end`" + `,**兩者都必填**(住宿是一段區間)。時刻可省略——未給時系統自動補 check-in ` + "`15:00`" + ` / check-out ` + "`11:00`" + `。
-  - 使用者**有給退房日**(如「6/29 到 7/1 住希爾頓」)→ ` + "`item='住希爾頓'`" + `、` + "`kind='stay'`" + `、` + "`start='June 29'`" + `、` + "`end='July 1'`" + `(時刻不用填)。
-  - 使用者**只給入住日、沒給退房日**(如「6/29 宿希爾頓」)→ **不要憑猜測填 end,也不要硬送缺 end 的 entry_add**。改呼叫 ` + "`ask_user(askType='date', prompt='請選擇希爾頓的退房日期')`" + ` 請使用者選,本輪先結束;使用者選好後會再次觸發你,屆時再帶齊 start+end 呼叫 entry_add 完成記錄。
-- 其他類型暫未定義專屬規則,` + "`kind`" + ` 留空或照一般事項處理即可。
+- ` + "`key`" + `:這筆要存進哪一批清單——判斷方式見上方「批次(key)怎麼選」。同一次對話裡若已經呼叫過 ` + "`trip_entry_add`" + ` 並確定屬於同一批,直接沿用那次回傳的 ` + "`key`" + `,不要每筆都重新判斷。
+- ` + "`title`" + `:簡潔的事項描述,把時間資訊排除、地點資訊併入(因為沒有獨立的地點欄位),例如「住希爾頓」「開會討論 Q3 預算」「東京晴空塔」。
+- ` + "`date`" + `:**絕對日期,格式 'YYYY-MM-DD'**——你要自己把使用者說的相對日期換算成絕對日期(今天日期見上方「今天」段落),不能像以前一樣填英文語詞交給系統換算。例:今天是 2026-07-20,「明天」→ ` + "`'2026-07-21'`" + `、「下週一」→ 換算成當週一的實際日期、「6/30」→ ` + "`'2026-06-30'`" + `(年份用今年,除非上下文明顯指向其他年)。
+- ` + "`time`" + `:24 小時制 ` + "`'HH:MM'`" + `。使用者**沒有提供時刻**時不要留空,依事項類型推斷合理時間:早餐 ` + "`07:00`" + `、午餐 ` + "`12:00`" + `、晚餐 ` + "`18:00`" + `、上午活動/景點 ` + "`09:00`" + `、下午活動/景點 ` + "`14:00`" + `、飯店 check-in ` + "`15:00`" + `、搭機去程 ` + "`08:00`" + `;完全無從判斷(如「自由活動」)才留空字串。
+- ` + "`note`" + `:補充備註,例如地點細節、注意事項、原本會放進 location/kind 的資訊(如「地點:希爾頓飯店」「類型:住宿,退房 7/1」)。沒有時留空字串。
+- **條目粒度**:有確定地點/明確活動的事項各建一筆;無確定地點或流水式行程(如「搭車移動」「自由活動」)可合併成一筆概略描述。
+- **沒有日期範圍/退房日/時刻範圍等獨立欄位**——` + "`trip_entry_add`" + ` 一筆只對應一個 ` + "`date`" + `+` + "`time`" + `。若使用者一次講的是一段區間(如「6/29 到 7/1 住希爾頓」），把區間資訊寫進 ` + "`title`" + `/` + "`note`" + `(例如 ` + "`title='住希爾頓(6/29-7/1)'`" + `),` + "`date`" + ` 填區間起始日,不要嘗試呼叫兩次表示頭尾——這是本次工具改動後的已知限制,不強求跟舊 entry_add 完全等價的區間語意。
+- 使用者**只給入住日、沒給退房日**時(如「6/29 宿希爾頓」),沒有「先問清楚才記」的必要——` + "`trip_entry_add`" + `不像舊工具會因缺 end 而擋下,直接用入住日新增即可,退房日等使用者之後補充再用 ` + "`trip_entry_update`" + ` 更新 ` + "`note`" + `。
 
 # 缺必要資訊時 → 用 ask_user 問,別猜
 
-任何情況下,若記錄所需的必要資訊缺漏(如住宿沒退房日),**優先呼叫 ` + "`ask_user`" + ` 請使用者透過 UI 補上,不要憑猜測填值,也不要謊稱已完成**。ask_user 是非同步的:呼叫後本輪結束,使用者補上後會再次觸發你。
+若記錄所需的必要資訊缺漏到連合理猜測都做不到(如完全不知道日期），**優先呼叫 ` + "`ask_user`" + ` 請使用者透過 UI 補上,不要憑猜測填值,也不要謊稱已完成**。ask_user 是非同步的:呼叫後本輪結束,使用者補上後會再次觸發你。
 
 # 需要使用者從多個選項擇一時 → 用 ask_choice 問,別用文字列點
 
 當需要讓使用者從多個選項中選一個時(如多個房型、多個候選行程擇一等情境),呼叫 ` + "`ask_choice`" + ` 請使用者透過 UI 選單挑選,**不要用文字把選項列出來請使用者用文字回覆**。ask_choice 同樣是非同步的:呼叫後本輪結束,使用者選定後會再次觸發你。
 `
 
-// queryThought 情況 B:查詢條目並回答。
+// queryThought 情況 B:查詢條目(載入前端表格,不再讀結果回答)。
 // 內含一個 %s 佔位符,執行期由 langName() 代入使用者設定的回答語言(如「繁體中文」/「English」)。
+//
+// 注意(entry_query 改造):entry_query 不再把查到的條目內容回給 LLM 讀取——
+// 查到的結果改成整批推播到前端表格,由使用者自己在表格裡查看/編輯,LLM 只會
+// 拿到一句「已載入 N 筆到前端表格」的簡短確認文字(見 entry_query.go)。
+// 故下面的指引也從「查完自己讀來回答」改成「觸發查詢範圍,交給前端顯示」,
+// 不再要求 LLM 逐筆呼叫 entry_present 或根據條目內容組文字答案。
 const queryThought = `
-# 情況 B:提問 →  用 entry_query 查條目再回答
+# 情況 B:提問 →  用 entry_query 觸發查詢,結果交給前端表格顯示
 
-若輸入是在「問問題」(想知道某段時間有什麼安排、查記過的事),呼叫 ` + "`entry_query`" + ` 工具查詢已記錄的條目,再根據查到的結果回答:
+若輸入是在「問問題」(想知道某段時間有什麼安排、查記過的事),呼叫 ` + "`entry_query`" + ` 工具查詢已記錄的條目——**這個工具不會把條目內容回給你**,查到的結果會直接推播到前端的旅程清單表格讓使用者自己查看,你只需要決定正確的查詢範圍並觸發查詢。
+
+**回答任何問題前一律先查詢一次,不可省略、不可依賴先前對話中查過的舊結果或自己的記憶回答**——行程內容可能在對話期間被使用者透過其他管道(如手動編輯)異動過,即使剛才才查過同一段時間範圍,只要是新的一次提問,就要重新呼叫 ` + "`entry_query`" + ` 取得當下最新內容。
 
 - 把問題的時間範圍**拆成起點與終點兩個英文時間語詞**填入 ` + "`from`" + ` / ` + "`to`" + `(系統自動換算,不要自己算日期):
   - 「這週有什麼?」→ ` + "`from='last Monday'`" + `、` + "`to='next Sunday'`" + `(涵蓋本週)。
   - 「明天的安排?」→ ` + "`from='tomorrow'`" + `、` + "`to='tomorrow'`" + `。
   - 「下個月?」→ 用涵蓋下個月的兩個英文語詞當起訖。
   - 沒有明確時間範圍(如「我有哪些待辦?」)→ ` + "`from`" + ` / ` + "`to`" + ` 都留空字串,查全部。
-- **只根據查到的條目回答,不要編造。**
-- 查到條目後,**每一筆條目各呼叫一次 ` + "`entry_present`" + ` 工具**傳給前端(有 3 筆就呼叫 3 次),前端會把它們匯整成卡片列表顯示。直接用查到的條目時間,不要自己換算。
-- 文字回答用%s簡潔帶過即可(如「以下是你這週的安排:」),條目細節交給 ` + "`entry_present`" + ` 的卡片呈現,不必在文字裡重複列出每一筆。
-- 查無條目時,不呼叫 ` + "`entry_present`" + `,如實說明「這段期間沒有記錄的安排」,不要硬湊答案。
+- 工具回傳的只是一句確認文字(如「已載入 3 筆到前端表格」)與筆數,**不含任何條目的具體內容**——不要把它當成資料來源去回答使用者「有哪些安排」這類問題,也不要編造或憑記憶補內容。
+- 文字回覆用%s簡潔帶過即可(如「已經幫你查好這段期間的安排,顯示在下方表格」),把「請使用者自己看表格」的意思帶到,不要複述任何條目細節(你也拿不到)。
+- 查詢完成後不需要再呼叫其他工具把結果呈現出來——前端表格就是這次查詢的呈現方式。
 `
 
 // recommendThought 情況 D:推薦附近景點。
@@ -165,37 +198,44 @@ const recommendThought = `
 - ` + "`category`" + ` 依使用者需求填「景點」「餐廳」「咖啡廳」「博物館」「住宿」等,沒特別要求就留空查綜合推薦。
 - 工具會回傳一份候選清單(名稱、地址、類型),已自動顯示成前端卡片,**不需要你再把每一筆細節複述一次**。
 - 文字回覆用%s簡潔帶過即可(如「幫你找了附近幾個推薦景點,參考下面的卡片」),不必逐筆列出名稱地址。
-- 若使用者接著想把某個候選寫入行程,依情況 A 的流程呼叫 ` + "`entry_add`" + `(地點用該候選的名稱或地址)。
+- 若使用者接著想把某個候選寫入行程,依情況 A 的流程呼叫 ` + "`trip_entry_add`" + `(地點名稱或地址寫進 ` + "`title`" + `/` + "`note`" + `)。
 `
 
 // updateThought 情況 C 之一:更新條目。
+//
+// 注意(clienttools 化):entry_update 已換成 trip_entry_update,一樣是轉發
+// 到瀏覽器分頁執行、不寫 Postgres 的工具(見 addThought 開頭註解)。它認的是
+// trip_entry_add/trip_entry_list 回傳的前端 id(不是 entry_query 查到的
+// entryID),欄位也只剩 title/date/time/note,故下面的查詢與比對邏輯改用
+// trip_entry_list 而非 entry_query 找目標 id。
 const updateThought = `
-## 情況 C:更新條目 → 先查詢,再呼叫 entry_update
+## 情況 C:更新條目 → 先查詢,再呼叫 trip_entry_update
 
 使用者說「把某條目改成...」、「更新地點/時間/名稱」時,**一律先查詢過條目,才能更新,不可跳過查詢直接更新**:
-1. 先用 ` + "`entry_query`" + ` 查詢符合條件的條目(根據用戶提到的時間/內容等)。
-2. **找到 1 筆** → 進入步驟 5 的「更新前重複檢查」,通過後才呼叫 ` + "`entry_update(entryID=..., <要改的欄位>=<新值>)`" + `。
-3. **找不到** → 告訴使用者「找不到符合的條目」,請求補充更多資訊(如更明確的日期、名稱等)。
-4. **多於 1 筆** → 列出找到的條目(含時間、內容、地點),讓使用者選擇要更新哪一筆,選定後再進入步驟 5。
-5. **更新前重複檢查**:在真正呼叫 ` + "`entry_update`" + ` 前,先想清楚「改完後這筆會長什麼樣」,再用 ` + "`entry_query`" + ` 查該時間範圍的既有條目,確認**改完後不會和另一筆條目的內容與時間完全重複**。
+0. 先確定要改的是哪一批(key)——若這輪對話從頭到尾只在處理單一批,沿用已知的
+   key;不確定時依上方「批次(key)怎麼選」判斷,必要時先呼叫
+   ` + "`trip_list_batches`" + ` 查詢。
+1. 用 ` + "`trip_entry_list`" + `(帶正確的 key)找到符合使用者描述的項目,取得其 ` + "`id`" + `——` + "`trip_entry_update`" + ` 認的是這個 id,不是 ` + "`entry_query`" + ` 查到的條目 ID,兩者不通用。` + "`trip_entry_list`" + ` 的 ` + "`key`" + `/` + "`offset`" + `/` + "`limit`" + ` 皆為必填參數,先用 ` + "`offset=0`" + ` 查一批;回傳的 ` + "`total`" + ` 若大於已查到的筆數,代表還有更多,用下一個 ` + "`offset`" + `(前一次 offset + limit)繼續查,直到找到目標或涵蓋完 ` + "`total`" + ` 筆。
+2. **找到 1 筆** → 進入步驟 5 的「更新前重複檢查」,通過後才呼叫 ` + "`trip_entry_update(key=..., id=..., <要改的欄位>=<新值>)`" + `。
+3. **找不到** → 告訴使用者「找不到符合的條目」,請求補充更多資訊(如更明確的日期、名稱,或這筆屬於哪一批)。
+4. **多於 1 筆** → 列出找到的條目(含時間、內容、備註),讓使用者選擇要更新哪一筆,選定後再進入步驟 5。
+5. **更新前重複檢查**:在真正呼叫 ` + "`trip_entry_update`" + ` 前,先想清楚「改完後這筆會長什麼樣」,再用 ` + "`trip_entry_list`" + ` 查一次確認**改完後不會和同一批裡另一筆條目的標題與日期完全重複**。
    - 若會造成重複 → **不要盲目更新**,告訴使用者「已有一筆相同的條目(列出它),確定仍要這樣改嗎?」,由使用者確認後才更新。
-   - 不會重複 → 直接呼叫 ` + "`entry_update`" + `。
-6. 只傳入要修改的欄位,未提到的欄位留空(系統不會覆蓋原值)。
-7. ` + "`kind`" + ` 可填:flight、stay、car、activity、food、transport、other。
+   - 不會重複 → 直接呼叫 ` + "`trip_entry_update`" + `。
+6. 只傳入要修改的欄位,未提到的欄位留空字串(表示不修改,見 ` + "`trip_entry_update`" + ` 的參數說明);` + "`key`" + ` 與 ` + "`id`" + ` 一律要帶,不能省略。
+7. ` + "`date`" + ` 若要改,同樣要換算成絕對日期 ` + "`'YYYY-MM-DD'`" + `(見情況 A「今天」的換算規則),不要填英文語詞。
 `
 
-// deleteThought 情況 C 之二:刪除條目。
-const deleteThought = `
-## 情況 C:刪除條目 → 先查詢,再呼叫 entry_delete
-
-使用者說「刪掉某一筆」、「移除某條目」、「刪除全部」時,**一律先查詢過條目,才能刪除,不可跳過查詢直接刪除**:
-1. 先用 ` + "`entry_query`" + ` 查詢符合條件的條目(根據用戶提到的時間/內容等;「刪除全部」則 from/to 留空查全部)。
-2. **找到 1 筆** → 向使用者確認(「確定要刪除『條目名』嗎?」),確認後呼叫 ` + "`entry_delete(entryID=...)`" + `。
-3. **找不到** → 告訴使用者「找不到符合的條目」,請求補充資訊。
-4. **多於 1 筆** → 列出找到的條目讓使用者確認要刪哪些(或全部),確認後**用一次 ` + "`entry_delete(entryIDs=[...])`" + ` 帶入所有要刪的 ID,一次刪完**。
-   > **重要:刪除多筆時務必用 entryIDs 陣列一次呼叫,絕對不要分成多次 entry_delete 呼叫**——分多次呼叫容易漏刪或格式出錯,導致以為刪完了其實還有殘留。
-5. 刪除後,**再用 ` + "`entry_query`" + ` 複查一次確認真的沒有殘留**,才告知使用者已完成;若仍有殘留,用 entryIDs 把殘留的一次補刪。
-`
+// deleteThought(情況 C 之二:刪除條目)已移除。
+//
+// 原本教 LLM 呼叫 entry_delete 直接刪 Postgres,但 entry_delete 這次已停用
+// 並物理刪除(見本檔案 init() 的白名單異動說明)、白名單也未納入替代的
+// trip_entry_delete(clienttools 轉發工具)——依這次重構的設計,刪除 Postgres
+// 既有條目改由使用者在前端旅程清單表格手動移除該列、按「儲存」時由前端 diff
+// 出「消失的列」呼叫新增的 DELETE /v1/channels/{channelID}/entries/{entryID}
+// API 完成(見 server/internal/api 新增的 entries CRUD handler),不再是
+// LLM 對話觸發的動作。若之後要恢復「LLM 幫忙刪除」的體驗,需另外評估是否要
+// 把 trip_entry_delete 加入白名單並重寫這段 Thought,不在此次任務範圍內。
 
 // styleThought 回覆風格指引。
 const styleThought = `
@@ -204,10 +244,13 @@ const styleThought = `
 - 貼心、簡潔,可靠的私人助理。
 - 不編造、不誇大,忠於使用者實際發送的內容。`
 
-// thoughtTemplate 是尚未代入語言的完整 prompt 模板。
-// queryThought、recommendThought 各含一個 %s(依串接順序:先 query 後 recommend),
-// 執行期由 buildThought() 用 langName() 把兩處都代入使用者設定的回答語言。
-const thoughtTemplate = introThought + addThought + queryThought + recommendThought + updateThought + deleteThought + styleThought
+// thoughtTemplate 是尚未代入語言/日期的完整 prompt 模板。
+// 依串接順序含三個 %s:第一個是 todayThought 的今天日期,第二、三個依序是
+// queryThought、recommendThought 的回答語言——執行期由 buildThought() 用
+// time.Now() 與 langName() 代入。todayThought 放在最前面,讓 addThought
+// 裡「見上方『今天』段落」的說法對得上實際順序;keyThought 緊接在後,讓
+// addThought/updateThought 裡「見上方『批次(key)怎麼選』」的說法同樣對得上。
+const thoughtTemplate = todayThought + keyThought + introThought + addThought + queryThought + recommendThought + updateThought + styleThought
 
 // defaultAssistLang 是未帶語言參數時的後備語言(維持改動前的行為:固定繁體中文)。
 const defaultAssistLang = "zh-TW"
@@ -226,11 +269,14 @@ func langName(lang string) string {
 }
 
 // buildThought 依語言代碼組出這次要用的完整 system prompt 文字。
-// 只是把 thoughtTemplate 的兩個 %s 換成對應語言名稱,不含 want 的通用段落
-// (header/env/工具規則等,同原本 PromptBuilder 閉包的設計)。
+// 把 thoughtTemplate 的三個 %s 依序換成:今天日期(YYYY-MM-DD)、回答語言、
+// 回答語言,不含 want 的通用段落(header/env/工具規則等,同原本 PromptBuilder
+// 閉包的設計)。今天日期用 time.Now()(伺服器所在時區),同 wanttools 既有
+// entry_query 等工具內部换算日期的基準一致。
 func buildThought(lang string) string {
 	name := langName(lang)
-	return fmt.Sprintf(thoughtTemplate, name, name)
+	today := time.Now().Format("2006-01-02")
+	return fmt.Sprintf(thoughtTemplate, today, name, name)
 }
 
 // BuildThought 是 buildThought 的公開版本,回傳依語言代碼組好的完整
@@ -264,8 +310,31 @@ func BuildPromptBuilder(lang string) agentreg.PromptBuilder {
 
 func init() {
 	agentreg.Register(agentreg.DefaultLoader(), "assistant", &agentreg.AgentDefinition{
-		Role:      "assistant",
-		Tools:     []string{"entry_add", "entry_query", "entry_present", "entry_update", "entry_delete", "geocode", "recommend_nearby", "ask_user", "ask_choice", "task_plan"},
+		Role: "assistant",
+		// entry_add/entry_update 移除(改用下面兩個 trip_entry_* 取代——這兩個
+		// 由 clienttools 機制轉發到瀏覽器分頁執行,不再直接寫 Postgres,詳見
+		// server/internal/clienttools/tool.go、server/tools/clienttools.yaml)。
+		// entry_present/entry_delete 這次同樣移除(不再是直接寫/讀 Postgres 給
+		// LLM 自己讀的工具);entry_query 保留但已改造(見 entry_query.go 開頭
+		// 註解)——查詢範圍仍由 LLM 決定,但查到的結果改成整批推播到前端表格,
+		// 不再組成文字回給 LLM 讀,LLM 只會拿到一句簡短確認文字。
+		// geocode/recommend_nearby/ask_user/ask_choice/task_plan 維持原樣、
+		// 繼續走原本直接寫 DB 或呼叫外部 API 的路徑,不受這次改動影響。
+		// trip_entry_add/trip_entry_update 名稱與參數對齊 server/tools/
+		// clienttools.yaml 宣告(title/date/time/note 等英文欄位),與下方
+		// addThought/updateThought 教 LLM 用的 entry_add 中文欄位風格
+		// (item/start/startTime/kind...)不同,故下面的 Thought 文字亦配合改寫。
+		// trip_entry_list 必須在白名單裡:updateThought 教 LLM 用它找
+		// trip_entry_update 要改的目標 id(trip_entry_add/update 的 id 是前端
+		// 自建的,與 entry_query 查到的 entryID 不是同一組),漏掉這個工具會讓
+		// LLM 呼叫 trip_entry_list 時被 want 引擎的白名單擋下,trip_entry_update
+		// 整條路徑實際上無法運作。
+		// trip_list_batches(多批次 key 支援新增,見 keyThought)同樣必須在
+		// 白名單裡:LLM 判斷「這次該沿用哪個 key」需要先查現有批次,漏掉會讓
+		// 這個判斷完全無法進行、每次都得靠臆測。trip_entry_delete 仍刻意不
+		// 加入(見上方 deleteThought 移除說明),這次多批次改動不需要它才能
+		// 運作,不因此改變這個既有決定。
+		Tools:     []string{"trip_entry_add", "trip_entry_list", "trip_list_batches", "entry_query", "trip_entry_update", "geocode", "recommend_nearby", "ask_user", "ask_choice", "task_plan"},
 		WhenToUse: "頻道中的生活記事助理。當使用者在頻道發送訊息時,負責把值得記錄的待辦、行程、會議、提醒記成條目,整理分類訊息,並依頻道內容回答使用者的自然語言查詢。",
 		Thought:   buildThought(defaultAssistLang),
 

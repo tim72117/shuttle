@@ -119,14 +119,26 @@ type AssistEntry struct {
 	EndTime   string `json:"endTime"`
 }
 
+// AssistPlace 是 agent 用 recommend_nearby 查到、要展示給使用者的候選景點。
+// 與 wanttools.RecommendedPlace 同形,但定義在 llm 層,讓 api 不需依賴 wanttools
+// (同 AssistEntry 對 wanttools.PresentedEntry 的做法)。
+type AssistPlace struct {
+	Name        string  `json:"name"`
+	Address     string  `json:"address"`
+	Lat         float64 `json:"lat"`
+	Lng         float64 `json:"lng"`
+	PrimaryType string  `json:"primaryType"`
+}
+
 // AssistResult 是 owner 統一輸入的處理結果。
 // Kind: "recorded"(agent 記錄了條目)或 "answer"(agent 回答了問題)。
 type AssistResult struct {
-	Kind     string        // "recorded" | "answer"
-	Text     string        // agent 的文字回應(已記錄時為確認語;回答時為答案)
-	Logged   int           // 本次記錄的條目數
-	EntryIDs []string      // 本次記錄時 emit 同步寫入的 entry ID(供前端關聯/更新顯示)
-	Entries  []AssistEntry // agent 用 present_entries 輸出的展示條目(供前端列表顯示)
+	Kind              string        // "recorded" | "answer"
+	Text              string        // agent 的文字回應(已記錄時為確認語;回答時為答案)
+	Logged            int           // 本次記錄的條目數
+	EntryIDs          []string      // 本次記錄時 emit 同步寫入的 entry ID(供前端關聯/更新顯示)
+	Entries           []AssistEntry // agent 用 present_entries 輸出的展示條目(供前端列表顯示)
+	RecommendedPlaces []AssistPlace // agent 用 recommend_nearby 查到的候選景點(供前端掛在該則訊息下方顯示)
 }
 
 // Assist 統一處理 owner 的輸入:在同一次完整 agent 推論裡,讓 LLM 自主決定
@@ -139,17 +151,30 @@ type AssistResult struct {
 // 呼叫 BuildPromptBuilder(lang) 產生本次專用的 system prompt,在 Submit 前
 // 透過 orch.SetPromptBuilder(...) 動態換掉,讓 LLM 依此次的語言設定作答
 // (見 assistant_agent.go BuildPromptBuilder 的技術說明)。
+// clientToolsSessionID:前端 ChatScreen.tsx 開的第二條 clienttools WS 連線
+// (/internal/clienttools/ws)的 sessionId(見 clienttools_ws.go 的
+// AckPayload.SessionID)。trip_entry_add/trip_entry_delete/trip_entry_update/
+// trip_entry_list(assistant role 白名單裡取代 entry_add/entry_update 的
+// 工具,見 assistant_agent.go)執行時會呼叫 clienttools.askPage,靠
+// ctx.GetSessionEnvs()["sessionID"] 找到 clienttools.RegisterAsker 註冊的
+// 那個 WS session,才能把呼叫轉發回瀏覽器分頁(見 clienttools/interaction.go
+// 的 InteractionAsker 文件註解)。這裡把它一併塞進同一次 SetSessionEnvs 呼叫
+// ——同 channelID/messageID 一樣不進 LLM 的 prompt,只在 w.mu 已序列化呼叫
+// 的前提下,於 Submit 前設定、Submit 後這輪工具呼叫都讀到同一份值,不會被
+// 下一次呼叫覆寫覆蓋(mu 序列化保證)。空字串(前端尚未連上第二條 WS)時,
+// trip_entry_* 呼叫會在 askPage 得到明確錯誤,不影響其餘工具。
 // linkMessage:agent 記錄了條目時,寫入來源 message 並把它與本次 emit 的
 // entry(參數 entryIDs)建立多對多關聯。只回答時不呼叫。由 api 層提供(持有 store)。
-func (w *WantAnalyzer) Assist(channelID, messageID, text, lang string, linkMessage func(entryIDs []string) error) AssistResult {
+func (w *WantAnalyzer) Assist(channelID, messageID, text, lang, clientToolsSessionID string, linkMessage func(entryIDs []string) error) AssistResult {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	wanttools.RecordLock()
 	defer wanttools.RecordUnlock()
-	// 輔助資訊(channelID/messageID)透過 SessionEnvs 隨 ToolUseContext 傳遞給工具,
-	// 不進送給 LLM 的 prompt,也不經過任何套件級全域變數。
-	w.orch.SetSessionEnvs(map[string]string{"channelID": channelID, "messageID": messageID})
+	// 輔助資訊(channelID/messageID/sessionID)透過 SessionEnvs 隨
+	// ToolUseContext 傳遞給工具,不進送給 LLM 的 prompt,也不經過任何
+	// 套件級全域變數。
+	w.orch.SetSessionEnvs(map[string]string{"channelID": channelID, "messageID": messageID, "sessionID": clientToolsSessionID})
 	// 本次呼叫要用的 system prompt(依語言動態組裝);w.mu 已序列化所有呼叫,
 	// 此處「設定 → Submit → 等待完成」不會與其他呼叫交錯覆寫彼此的 PromptBuilder。
 	w.orch.SetPromptBuilder(BuildPromptBuilder(lang))
@@ -201,6 +226,16 @@ func (w *WantAnalyzer) Assist(channelID, messageID, text, lang string, linkMessa
 			Title: e.Title, Start: e.Start, StartTime: e.StartTime, End: e.End, EndTime: e.EndTime,
 		})
 	}
+	// 把 wanttools 的推薦景點轉成 llm 層型別,同 presented 的做法。
+	// recommend_nearby 與 present_entries 同屬本次 Assist() 推論流程內執行的
+	// sync 工具(見 wanttools/sink.go RecordLock/RecordUnlock 的生命週期),
+	// 故在同一處、以同一種模式一併取出。
+	var places []AssistPlace
+	for _, p := range wanttools.RecommendedPlaces() {
+		places = append(places, AssistPlace{
+			Name: p.Name, Address: p.Address, Lat: p.Lat, Lng: p.Lng, PrimaryType: p.PrimaryType,
+		})
+	}
 
 	logged := wanttools.EmitCount()
 	if logged > 0 {
@@ -214,9 +249,9 @@ func (w *WantAnalyzer) Assist(channelID, messageID, text, lang string, linkMessa
 				return AssistResult{Kind: "error", Text: "寫入訊息/關聯失敗: " + err.Error()}
 			}
 		}
-		return AssistResult{Kind: "recorded", Text: answer, Logged: logged, EntryIDs: ids, Entries: presented}
+		return AssistResult{Kind: "recorded", Text: answer, Logged: logged, EntryIDs: ids, Entries: presented, RecommendedPlaces: places}
 	}
-	return AssistResult{Kind: "answer", Text: answer, Logged: 0, Entries: presented}
+	return AssistResult{Kind: "answer", Text: answer, Logged: 0, Entries: presented, RecommendedPlaces: places}
 }
 
 // Answer 讓 want agent 回答自然語言查詢:agent 依 assistant.md 指引,自己呼叫

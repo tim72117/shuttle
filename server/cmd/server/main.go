@@ -16,6 +16,7 @@ import (
 	"github.com/tim72117/tripace/internal/llm"
 	"github.com/tim72117/tripace/internal/model"
 	"github.com/tim72117/tripace/internal/store"
+	"github.com/tim72117/tripace/internal/toolschema"
 	"github.com/tim72117/tripace/internal/wanttools"
 
 	"github.com/joho/godotenv"
@@ -37,6 +38,8 @@ func main() {
 	devMode := flag.Bool("dev", true, "開發模式:Apple token 不驗簽章")
 	llmKind := flag.String("llm", "want", "分析器:want(真實 LLM)| mock(假 LLM,送出觸發預設情境,供 web 操作)")
 	adminEnabled := flag.Bool("admin", false, "是否啟用管理後台(/admin/api/*);未設時整個功能完全不注冊,如同不存在")
+	clientToolsPOC := flag.Bool("clienttools-poc", false, "是否啟用「LLM 呼叫前端 tool」試做(POC,/internal/clienttools/*);預設不啟用,端點維持回 503。僅在 -llm=want 下有意義(需要 want provider 已初始化)")
+	clientToolsDir := flag.String("clienttools-dir", "tools", "clienttools POC 的工具定義目錄(*.yaml),相對路徑同 -db 慣例,相對於執行時的工作目錄")
 	flag.Parse()
 
 	// Cloud Run 等托管環境只方便傳環境變數(不方便改 ENTRYPOINT 傳 flag),
@@ -127,13 +130,65 @@ func main() {
 
 	signer := auth.NewSigner(*jwtSecret, 30*24*time.Hour)
 	srv := api.New(st, analyzer, signer, *devMode)
+
+	// trip_entry_* 工具註冊(clienttools.RegisterApp,經由 llm.NewClientToolsAnalyzer)
+	// 過去只在 -clienttools-poc 這個試做開關底下才會執行;但現在正式 assistant
+	// role(assistant_agent.go)的 Tools 白名單已經改用 trip_entry_add/
+	// trip_entry_update 取代 entry_add/entry_update,是正式對話會用到的東西了,
+	// 不能再綁死在一個語意上是「試做開關」的 flag 底下——若使用者只帶 -llm=want
+	// 沒帶 -clienttools-poc,assistant role 白名單裡列的 trip_entry_* 工具會
+	// 在 want 的全域 registry 裡完全不存在,LLM 一旦嘗試呼叫就會失敗。
+	// 故這裡改成:只要 -llm=want(不論 -clienttools-poc 是否開啟),就一定
+	// 執行這段註冊 + EnableClientTools(掛 /internal/clienttools/* 端點,見
+	// clienttools_ws.go)——ChatScreen.tsx 的第二條 WS 連線需要這個端點存在,
+	// 才能把 assistant 對話的 sessionID 註冊進 clienttools.RegisterAsker
+	// (見 want_analyzer.go Assist/Answer 的 SetSessionEnvs 說明)。
+	// -clienttools-poc 本身保留(不拿掉、不改名),但不再是「工具有沒有被註冊」
+	// 的唯一開關;它目前只影響是否印出下面這行試做專屬的啟動 log。
+	// 任何一步失敗都直接 log.Fatalf,不靜默略過——否則伺服器會「看起來啟動
+	// 成功」但 /internal/clienttools/* 端點其實還是回 503(EnableClientTools
+	// 沒被呼叫時的行為),或 assistant 對話呼叫 trip_entry_add 時才第一次
+	// 發現工具不存在,造成誤判。
+	if *llmKind == "want" {
+		// NewClientToolsAnalyzer 內部假設 want provider 已經初始化過一次(見
+		// clienttools_agent.go 的文件註解:它不會自己呼叫 wantorch.SetupWith,
+		// 第一次 Submit 時若 GlobalEngine 還是 nil 會 panic)。此處已在
+		// -llm=want 分支內(NewWantPool 已完成 provider 初始化),條件成立。
+		registry, err := toolschema.NewRegistry(*clientToolsDir)
+		if err != nil {
+			log.Fatalf("載入 clienttools 工具定義目錄 %s 失敗: %v", *clientToolsDir, err)
+		}
+		app, ok := registry.Get("clienttools")
+		if !ok {
+			log.Fatalf("clienttools 工具定義目錄 %s 底下找不到 appId=clienttools 的 App", *clientToolsDir)
+		}
+		// 註冊 trip_entry_add/trip_entry_delete/trip_entry_update/trip_entry_list
+		// 進 want 的全域 tool registry(clienttools.RegisterApp,在
+		// NewClientToolsAnalyzer 內部呼叫),讓 assistant role 的白名單真的能
+		// 呼叫到這些工具,同時保留 clienttoolsRole 這條獨立 orchestrator
+		// 供 DebugApp.tsx 的既有試做頁面沿用(不受這次改動影響)。
+		clientToolsAnalyzer := llm.NewClientToolsAnalyzer(app)
+		srv.EnableClientTools(registry, clientToolsAnalyzer)
+		if *clientToolsPOC {
+			log.Printf("clienttools POC 試做頁面已啟用(/internal/clienttools/*,工具目錄=%s)", *clientToolsDir)
+		} else {
+			log.Printf("trip_entry_* 工具已註冊(供正式 assistant 對話使用;/internal/clienttools/* 端點同時可用,工具目錄=%s)", *clientToolsDir)
+		}
+	} else if *clientToolsPOC {
+		// -clienttools-poc 帶了但 -llm 不是 want:過去這裡會 log.Fatalf
+		// (clienttools POC 需要已初始化的 want provider)。這個檢查繼續保留
+		// ——mock 分析器不會建立任何 want provider,靜默忽略這個 flag 只會讓
+		// 使用者以為試做已啟用,實際上呼叫時才 panic。
+		log.Fatalf("clienttools POC 需要 -llm=want(已初始化的 want provider);目前 -llm=%s", *llmKind)
+	}
+
 	wanttools.BindNotify(srv.NotifyEntriesUpdated)
 	wanttools.BindEntryUpdating(srv.NotifyEntryUpdating)
 	wanttools.BindAskUser(srv.NotifyAskUser)
 	wanttools.BindAskChoice(srv.NotifyAskChoice)
 	wanttools.BindTaskCreated(srv.NotifyTaskCreated)
 	wanttools.BindTaskEntryReady(srv.NotifyTaskEntryReady)
-	wanttools.BindRecommendedPlaces(srv.NotifyRecommendedPlaces)
+	wanttools.BindEntriesLoaded(srv.NotifyEntriesLoaded)
 
 	dbKind := "sqlite:" + dsn
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {

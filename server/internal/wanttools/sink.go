@@ -30,6 +30,19 @@ type PresentedEntry struct {
 	EndTime   string `json:"endTime"`
 }
 
+// RecommendedPlace 是 recommend_nearby 工具查到的一筆候選景點,供呼叫端在
+// agent 這輪推論結束後隨 AssistResult 一併回給前端,掛在觸發它的那則訊息底下顯示
+// (與 PresentedEntry/presented/addPresented/Presented() 同一套「累積本次流程
+// 結果」機制,對稱 present_entries 的既有模式;取代先前用 NotifyRecommendedPlaces
+// 異步 WS 廣播、與訊息脫鉤的做法)。
+type RecommendedPlace struct {
+	Name        string  `json:"name"`
+	Address     string  `json:"address"`
+	Lat         float64 `json:"lat"`
+	Lng         float64 `json:"lng"`
+	PrimaryType string  `json:"primaryType"`
+}
+
 // NotifyFn 廣播 entries_updated 事件給前端(server 啟動時用 BindNotify 注入)。
 type NotifyFn func(channelID string)
 
@@ -49,8 +62,8 @@ type AskChoiceOption struct {
 
 // AskChoiceFn 廣播 ask_choice 事件給前端,讓前端開啟選單 UI 請使用者從
 // options 中選一個(server 啟動時用 BindAskChoice 注入)。
-// options 沿用 RecommendedPlacesFn 的風格,用 []map[string]any 而非具名型別,
-// 避免 api 套件為了此簽章反向依賴 wanttools 的 AskChoiceOption。
+// options 用 []map[string]any 而非具名型別,避免 api 套件為了此簽章反向
+// 依賴 wanttools 的 AskChoiceOption。
 type AskChoiceFn func(channelID, prompt string, options []map[string]any)
 
 // TaskCreatedFn 廣播 task_created 事件(帶 taskID/date/text/kind)給前端,
@@ -61,21 +74,37 @@ type TaskCreatedFn func(channelID string, taskID int, date, text, kind string)
 // 讓前端把對應的佔位卡直接替換成正式條目卡(server 啟動時用 BindTaskEntryReady 注入)。
 type TaskEntryReadyFn func(channelID string, taskID int, entryID string)
 
-// RecommendedPlacesFn 廣播 recommended_places 事件(帶景點候選清單)給前端,
-// 讓前端在對話下方顯示推薦景點卡片(server 啟動時用 BindRecommendedPlaces 注入)。
-type RecommendedPlacesFn func(channelID string, places []map[string]any)
+// TripEntryPayload 是 entry_query 查到、要推播給前端旅程清單表格的一筆條目,
+// 欄位對齊前端 TripEntry(web/src/clienttools/tripEntryTools.ts)與
+// server/tools/clienttools.yaml 裡 trip_entry_add/trip_entry_list 的欄位
+// 命名(title/date/time/note),而非 model.Entry 的 start/startTime 命名——
+// 這樣前端收到後不需要再做一次欄位名稱轉換,可直接當 TripEntry 使用。
+type TripEntryPayload struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Date  string `json:"date"`
+	Time  string `json:"time"`
+	Note  string `json:"note"`
+}
+
+// EntriesLoadedFn 廣播 entries_loaded 事件(帶 entry_query 查到的條目清單)給
+// 前端,讓前端合併進旅程清單表格供使用者查看/編輯(server 啟動時用
+// BindEntriesLoaded 注入)。沿用 AskChoiceFn 的風格,用 []map[string]any 而非
+// TripEntryPayload,避免 api 套件為了此簽章反向依賴 wanttools;
+// NotifyEntriesLoaded 負責把 []TripEntryPayload 轉成這個形狀。
+type EntriesLoadedFn func(channelID string, entries []map[string]any)
 
 var (
 	// recordMu 序列化整個「記錄一則訊息」的流程,確保 RecordLock 保護的計數/清單不交錯。
-	recordMu          sync.Mutex
-	sink              EntrySink
-	notifyFn          NotifyFn
-	entryUpdating     EntryUpdatingFn
-	askUser           AskUserFn
-	askChoice         AskChoiceFn
-	taskCreated       TaskCreatedFn
-	taskEntryReady    TaskEntryReadyFn
-	recommendedPlaces RecommendedPlacesFn
+	recordMu       sync.Mutex
+	sink           EntrySink
+	notifyFn       NotifyFn
+	entryUpdating  EntryUpdatingFn
+	askUser        AskUserFn
+	askChoice      AskChoiceFn
+	taskCreated    TaskCreatedFn
+	taskEntryReady TaskEntryReadyFn
+	entriesLoaded  EntriesLoadedFn
 	// emitCount 記本次 RecordLock 流程內 record_entry 被觸發的次數,
 	// 供呼叫端判斷 agent 究竟「記錄了」還是「只回答」。
 	emitCount int
@@ -85,6 +114,10 @@ var (
 	// presented 收集本次流程內 present_entries 工具輸出的條目,
 	// 由呼叫端取出回傳前端用列表元件顯示。
 	presented []PresentedEntry
+	// recommendedPlaces 收集本次流程內 recommend_nearby 工具查到的候選景點,
+	// 由呼叫端取出、隨 AssistResult 回傳前端掛在觸發它的那則訊息底下顯示
+	// (與 presented 同一套「累積本次流程結果」機制,取代先前的異步 WS 廣播)。
+	recommendedPlaces []RecommendedPlace
 )
 
 // BindSink 注入條目持久化實作(server 啟動時呼叫)。
@@ -159,14 +192,19 @@ func NotifyTaskEntryReady(channelID string, taskID int, entryID string) {
 	}
 }
 
-// BindRecommendedPlaces 注入 recommended_places 廣播函式(server 啟動時呼叫)。
-func BindRecommendedPlaces(fn RecommendedPlacesFn) { recommendedPlaces = fn }
+// BindEntriesLoaded 注入 entries_loaded 廣播函式(server 啟動時呼叫)。
+func BindEntriesLoaded(fn EntriesLoadedFn) { entriesLoaded = fn }
 
-// NotifyRecommendedPlaces 廣播 recommended_places(帶景點候選清單),供 recommend_nearby
-// 工具呼叫,讓前端在對話下方顯示推薦景點卡片。
-func NotifyRecommendedPlaces(channelID string, places []map[string]any) {
-	if recommendedPlaces != nil {
-		recommendedPlaces(channelID, places)
+// NotifyEntriesLoaded 廣播 entries_loaded(帶轉換成 TripEntryPayload 的條目清單),
+// 供 entry_query 工具呼叫,讓前端把查到的條目合併進旅程清單表格供使用者查看/編輯。
+// entries 為空陣列時仍會廣播(讓前端知道「這次查詢查無結果」),由前端決定如何呈現。
+func NotifyEntriesLoaded(channelID string, entries []TripEntryPayload) {
+	if entriesLoaded != nil {
+		out := make([]map[string]any, len(entries))
+		for i, e := range entries {
+			out[i] = map[string]any{"id": e.ID, "title": e.Title, "date": e.Date, "time": e.Time, "note": e.Note}
+		}
+		entriesLoaded(channelID, out)
 	}
 }
 
@@ -186,8 +224,14 @@ func ChannelFrom(ctx types.ToolContext) string {
 }
 
 // RecordLock / RecordUnlock 包住一次完整的記錄流程(設定 context → 跑 agent → 清除)。
-// RecordLock 同時把本次的 emit 計數、已寫入 ID、展示條目歸零。
-func RecordLock()   { recordMu.Lock(); emitCount = 0; emittedIDs = nil; presented = nil }
+// RecordLock 同時把本次的 emit 計數、已寫入 ID、展示條目、推薦景點歸零。
+func RecordLock() {
+	recordMu.Lock()
+	emitCount = 0
+	emittedIDs = nil
+	presented = nil
+	recommendedPlaces = nil
+}
 func RecordUnlock() { recordMu.Unlock() }
 
 // EmitCount 回傳本次記錄流程內 record_entry 被觸發(且成功寫入)的次數。
@@ -201,6 +245,13 @@ func Presented() []PresentedEntry { return presented }
 
 // addPresented 由 present_entries 工具呼叫,累積要展示的條目。
 func addPresented(es []PresentedEntry) { presented = append(presented, es...) }
+
+// RecommendedPlaces 回傳本次流程內 recommend_nearby 查到的候選景點
+// (供呼叫端隨 AssistResult 回給前端,掛在觸發它的那則訊息底下顯示)。
+func RecommendedPlaces() []RecommendedPlace { return recommendedPlaces }
+
+// addRecommendedPlaces 由 recommend_nearby 工具呼叫,累積本次查到的候選景點。
+func addRecommendedPlaces(ps []RecommendedPlace) { recommendedPlaces = append(recommendedPlaces, ps...) }
 
 // emit 由工具呼叫,同步把條目寫入 store(entry 為主體,獨立寫入)。
 // channelID 由呼叫端透過 ChannelFrom(ctx) 取得後傳入,emit 本身不碰任何全域頻道狀態。

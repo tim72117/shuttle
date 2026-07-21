@@ -98,11 +98,14 @@ func (s *Server) NotifyTaskEntryReady(channelID string, taskID int, entryID stri
 	})
 }
 
-// NotifyRecommendedPlaces 廣播 recommended_places(帶景點候選清單)給指定頻道的訂閱者
-// (供 wanttools 的 recommend_nearby 工具呼叫),讓前端在對話下方顯示推薦景點卡片。
-func (s *Server) NotifyRecommendedPlaces(channelID string, places []map[string]any) {
+// NotifyEntriesLoaded 廣播 entries_loaded(帶 entry_query 查到、轉換成前端
+// TripEntry 格式的條目清單)給指定頻道的訂閱者(供 wanttools 的 entry_query
+// 工具呼叫),讓前端合併進旅程清單表格供使用者查看/編輯。entries 用
+// []map[string]any 而非具名型別,避免 api 套件為了此簽章反向依賴 wanttools
+// (見 wanttools.TripEntryPayload 的定義處)。
+func (s *Server) NotifyEntriesLoaded(channelID string, entries []map[string]any) {
 	s.hub.Broadcast(channelID, map[string]any{
-		"event": "recommended_places", "channelID": channelID, "places": places,
+		"event": "entries_loaded", "channelID": channelID, "entries": entries,
 	})
 }
 
@@ -122,7 +125,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/channels/{id}/query", s.handleQuery)
 	mux.HandleFunc("POST /v1/channels/{id}/assist", s.handleAssist)
 	mux.HandleFunc("GET /v1/channels/{id}/entries", s.handleListEntries)
+	mux.HandleFunc("POST /v1/channels/{id}/entries", s.handleCreateTripEntry)
 	mux.HandleFunc("DELETE /v1/channels/{id}/entries", s.handleResetChannelData)
+	mux.HandleFunc("PUT /v1/channels/{id}/entries/{entryID}", s.handleUpdateTripEntry)
+	mux.HandleFunc("DELETE /v1/channels/{id}/entries/{entryID}", s.handleDeleteTripEntry)
 	mux.HandleFunc("PATCH /v1/entries/{id}", s.handleUpdateEntry)
 	mux.HandleFunc("GET /v1/channels/{id}/trips", s.handleListTrips)
 	mux.HandleFunc("GET /v1/channels/{id}/trips/{tripID}/entries", s.handleListTripEntries)
@@ -443,6 +449,16 @@ func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Text string `json:"text"`
 		Lang string `json:"lang,omitempty"`
+		// ClientToolsSessionID:前端 ChatScreen.tsx 另開的第二條 WS 連線
+		// (/internal/clienttools/ws)收到 ack 後拿到的 sessionId(見
+		// clienttools_ws.go handleHello)。帶上這個欄位,want_analyzer.go 的
+		// Assist 才能透過 orch.SetSessionEnvs 把它交給 trip_entry_* 工具,
+		// 讓工具執行時經 ctx.GetSessionEnvs() 找到同一個 WS session、把呼叫
+		// 轉發回瀏覽器分頁(見 clienttools/interaction.go 的 askPage)。
+		// 空字串(前端尚未連上第二條 WS,或這次改動前的舊前端)時,
+		// trip_entry_* 工具呼叫會直接失敗回「no session id on this call」
+		// ——不影響其餘工具(entry_query/entry_delete/geocode 等)照常運作。
+		ClientToolsSessionID string `json:"clientToolsSessionId,omitempty"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -461,7 +477,7 @@ func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {
 	// linkMessage 傳 nil:不再於後端寫入 message / 建立 entry↔message 關聯。
 	// 原話與其關聯改由各裝置端自行保存。
 	// Lang 為使用者設定的 LLM 回答語言偏好("zh-TW"/"en"),空字串由下游視為預設(繁體中文)。
-	res := assistant.AssistForSession(user.ID, id, msgID, text, body.Lang, nil)
+	res := assistant.AssistForSession(user.ID, id, msgID, text, body.Lang, body.ClientToolsSessionID, nil)
 
 	if res.Kind == "error" {
 		writeErr(w, http.StatusInternalServerError, "assist_failed", res.Text)
@@ -479,15 +495,21 @@ func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 回答了 → 不存訊息,只回答案;若 agent 用 present_entries 輸出了條目,一併回給前端用列表顯示。
+	// 回答了 → 不存訊息,只回答案;若 agent 用 present_entries 輸出了條目、
+	// 或用 recommend_nearby 查到了候選景點,一併回給前端掛在該則訊息下方顯示。
 	entries := res.Entries
 	if entries == nil {
 		entries = []llm.AssistEntry{}
 	}
+	places := res.RecommendedPlaces
+	if places == nil {
+		places = []llm.AssistPlace{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"kind":    "answer",
-		"answer":  res.Text,
-		"entries": entries,
+		"kind":              "answer",
+		"answer":            res.Text,
+		"entries":           entries,
+		"recommendedPlaces": places,
 	})
 }
 
@@ -504,6 +526,140 @@ func (s *Server) handleResetChannelData(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.resetChannel(w, id)
+}
+
+// tripEntryBody 是前端旅程清單「儲存」動作的請求/回應共用形狀,欄位對齊前端
+// TripEntry(web/src/clienttools/tripEntryTools.ts 的 {id, title, date, time,
+// note})與 server/tools/clienttools.yaml 的 trip_entry_add/trip_entry_update
+// 命名——這三個端點是給前端「儲存」按鈕呼叫的一般 REST API(逐筆
+// upsert),不經過 wanttools/want 那套 LLM 工具註冊機制,故欄位命名直接對齊
+// 前端型別即可,不需要跟 entry_query.go 的 TripEntryPayload 共用型別
+// (兩邊各自獨立、只是欄位剛好同名同義)。
+type tripEntryBody struct {
+	ID    string `json:"id,omitempty"`
+	Title string `json:"title"`
+	Date  string `json:"date"`
+	Time  string `json:"time"`
+	Note  string `json:"note"`
+}
+
+// POST /v1/channels/{id}/entries — 前端旅程清單「儲存」新增一筆(不含 id,由後端產生)。
+// body 帶 TripEntry 格式(title/date/time/note);成功回傳含新產生 id 的完整 tripEntryBody。
+// 屬「修改」操作,需 editor 角色(owner 預設即 editor,同 handleAssist 的權限慣例)。
+func (s *Server) handleCreateTripEntry(w http.ResponseWriter, r *http.Request) {
+	channelID := r.PathValue("id")
+	if !s.requireEditor(w, channelID, s.userFor(r).ID) {
+		return
+	}
+
+	var body tripEntryBody
+	if !decode(w, r, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Title) == "" {
+		writeErr(w, http.StatusBadRequest, "invalid_title", "title 不可為空")
+		return
+	}
+
+	svc := tripsvc.New(s.store, nil)
+	res, err := svc.Record(tripsvc.RecordInput{
+		ChannelID: channelID,
+		Title:     body.Title,
+		Start:     body.Date,
+		StartTime: body.Time,
+	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "create_failed", err.Error())
+		return
+	}
+	// note 目前無獨立寫入欄位(RecordInput 沒有 Note),新增後若帶了 note 用
+	// UpdateEntry 補上——tripsvc.Record 專注在「新增 + 找候選行程」,note 是
+	// 手動編輯情境的欄位,沿用 UpdateEntry 的既有寫入路徑,不擴大 RecordInput
+	// 的職責。
+	if body.Note != "" {
+		if err := svc.UpdateEntry(tripsvc.UpdateEntryInput{ID: res.EntryID, Note: body.Note}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "create_failed", err.Error())
+			return
+		}
+	}
+	s.hub.Broadcast(channelID, map[string]any{"event": "entries_updated", "channelID": channelID})
+	writeJSON(w, http.StatusCreated, tripEntryBody{ID: res.EntryID, Title: body.Title, Date: body.Date, Time: body.Time, Note: body.Note})
+}
+
+// PUT /v1/channels/{id}/entries/{entryID} — 前端旅程清單「儲存」修改既有一筆。
+// body 帶要更新的欄位(TripEntry 格式);entryID 須屬於路徑上的 channelID,
+// 避免前端誤帶其他頻道的 id 時跨頻道修改到別人的資料。
+func (s *Server) handleUpdateTripEntry(w http.ResponseWriter, r *http.Request) {
+	channelID := r.PathValue("id")
+	entryID := r.PathValue("entryID")
+	if !s.requireEditor(w, channelID, s.userFor(r).ID) {
+		return
+	}
+
+	entry, err := s.store.GetEntry(entryID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, "entry_not_found", "條目不存在")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "lookup_failed", err.Error())
+		return
+	}
+	if entry.ChannelID != channelID {
+		writeErr(w, http.StatusNotFound, "entry_not_found", "條目不存在")
+		return
+	}
+
+	var body tripEntryBody
+	if !decode(w, r, &body) {
+		return
+	}
+
+	svc := tripsvc.New(s.store, nil)
+	if err := svc.UpdateEntry(tripsvc.UpdateEntryInput{
+		ID:        entryID,
+		Title:     body.Title,
+		Start:     body.Date,
+		StartTime: body.Time,
+		Note:      body.Note,
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "update_failed", err.Error())
+		return
+	}
+	s.hub.Broadcast(channelID, map[string]any{"event": "entries_updated", "channelID": channelID})
+	writeJSON(w, http.StatusOK, map[string]string{"updated": entryID})
+}
+
+// DELETE /v1/channels/{id}/entries/{entryID} — 前端旅程清單「儲存」刪除既有一筆
+// (使用者在前端表格移除該列後,儲存時觸發)。entryID 須屬於路徑上的
+// channelID,理由同 handleUpdateTripEntry。
+func (s *Server) handleDeleteTripEntry(w http.ResponseWriter, r *http.Request) {
+	channelID := r.PathValue("id")
+	entryID := r.PathValue("entryID")
+	if !s.requireEditor(w, channelID, s.userFor(r).ID) {
+		return
+	}
+
+	entry, err := s.store.GetEntry(entryID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, "entry_not_found", "條目不存在")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "lookup_failed", err.Error())
+		return
+	}
+	if entry.ChannelID != channelID {
+		writeErr(w, http.StatusNotFound, "entry_not_found", "條目不存在")
+		return
+	}
+
+	if err := s.store.DeleteEntry(entryID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "delete_failed", err.Error())
+		return
+	}
+	s.hub.Broadcast(channelID, map[string]any{"event": "entries_updated", "channelID": channelID})
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": entryID})
 }
 
 // PATCH /v1/entries/{id} — 手動編輯條目(不經 AI,前端表單直接送出要改的欄位)。

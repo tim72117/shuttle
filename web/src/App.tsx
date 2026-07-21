@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import {
   ChevronLeft, ChevronDown, Check,
   Send, AlertCircle, Plus, LogIn, X, Settings, LogOut,
+  List, Calendar, Sparkles, GalleryHorizontal, Map,
 } from 'lucide-react'
 import type { ClientConfig } from './api'
 import * as api from './api'
@@ -10,9 +11,12 @@ import { ApiError } from './api'
 import type { Channel, Entry, User } from './types'
 import { LandingPage } from './LandingPage'
 import { ChatScreen } from './ChatScreen'
-import { MultiTrackTimeline } from './Timeline'
+import type { DesktopTimelineMirror } from './ChatScreen'
+import { MultiTrackTimeline, type TaskPlaceholder } from './Timeline'
 import type { AssistLang } from './assistLang'
 import { ASSIST_LANG_KEY, getAssistLang } from './assistLang'
+import { RecommendedPlacesList, RecommendedPlacesRow, FAKE_RECOMMENDED_PLACES } from './RecommendedPlaces'
+import { RecommendedPlacesMap } from './RecommendedPlacesMap'
 
 // baseURL 由建置時的 VITE_API_BASE 決定(見 .env.development),不開放使用者於 UI 修改;
 // 未設時退回目前頁面 origin(production 前後端同源部署)。
@@ -89,7 +93,7 @@ function useIsDesktop(): boolean {
   return isDesktop
 }
 
-export function App() {
+export function App({ isDemo = false }: { isDemo?: boolean } = {}) {
   const props = useAppState()
   // 根路徑渲染產品介紹 landing page(全寬,不套 phone 外框)
   if (window.location.pathname === '/') {
@@ -107,7 +111,7 @@ export function App() {
   // /app 路徑:開發測試台本體(套 iPhone 外框)
   return (
     <div className="web-app">
-      <PhoneContent {...props} />
+      <PhoneContent {...props} isDemo={isDemo} />
     </div>
   )
 }
@@ -126,6 +130,11 @@ export interface ContentProps {
   isGuest: boolean
   onAuthed: (token: string, user: User, email: string) => void
   onLogout: () => void
+  // isDemo:網址帶 ?demo 時為 true,只影響桌面版 DesktopRail 是否多顯示試做用
+  // 導覽項目(見 DesktopRail)。手機版完全不讀這個值,行為不受影響。可選是因為
+  // DebugApp.tsx 的 PhoneContent 用法（demoMode==='app' 分支）不涉及 ?demo 邏輯，
+  // 不需要跟著補這個 prop。
+  isDemo?: boolean
 }
 
 export function PhoneContent(props: ContentProps) {
@@ -192,6 +201,20 @@ export function PhoneContent(props: ContentProps) {
 
 // ---- 桌面版佈局(寬度 >= 768px):左側邊欄(頻道列表 + 使用者選單)+ 右側 ChatScreen ----
 
+// PanelMode:side panel 目前顯示的內容;null 代表收合(主區全寬)。
+// 'demo-cards'/'demo-row'/'demo-map':試做用的推薦景點呈現方式(假資料,見
+// RecommendedPlaces.tsx/RecommendedPlacesMap.tsx),只有網址帶 ?demo 時 rail 上
+// 才會出現對應按鈕(見 DesktopRail),與正式的 channels/timeline 分開命名以便一眼區分。
+type PanelMode = 'channels' | 'timeline' | 'demo-cards' | 'demo-row' | 'demo-map' | null
+
+// 時間軸鏡像資料的初始值(尚未收到 ChatScreen 鏡像前,或未選擇行程時使用)。
+const EMPTY_TIMELINE_MIRROR: DesktopTimelineMirror = {
+  entries: [],
+  updatingEntryIDs: new Set<string>(),
+  taskPlaceholders: [] as TaskPlaceholder[],
+  refetchEntries: () => {},
+}
+
 function DesktopContent(props: ContentProps) {
   const { cfg, activeChannel, setActiveChannel } = props
   // settingsOpen 獨立於 DesktopUserMenu 內部的 popover 開關狀態:選單裡點「設定」
@@ -202,32 +225,128 @@ function DesktopContent(props: ContentProps) {
   // 提升到這裡、和 .desktop-layout 同層,搭配 CSS 的 position: fixed 疊加,
   // 才能保證 dialog 蓋住整個桌面版佈局(含側欄)最上層。
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // panelMode:rail/side panel 的狀態集中放在 DesktopContent 這一層(而非 rail 或
+  // panel 元件內部),因為 rail 的點擊要決定 panel 顯示什麼、panel 收合後也要能
+  // 反過來影響 rail 的高亮標記,兩者需共享同一份狀態才不會不同步。
+  // 預設值 'channels':進入桌面版時 panel 開啟且顯示頻道列表(維持既有使用者習慣)。
+  const [panelMode, setPanelMode] = useState<PanelMode>('channels')
+  // timelineMirror:ChatScreen 透過 desktopChat.onTimelineData 鏡像過來的時間軸資料
+  // (entries/updatingEntryIDs/taskPlaceholders/refetchEntries)。ChatScreen 是這份
+  // 資料唯一的擁有者(它的 WS 連線即時維護這些 state),這裡只是接住鏡像後轉交給
+  // side panel 的 MultiTrackTimeline,不可以自己另外 fetch 或開第二條 WS。
+  const [timelineMirror, setTimelineMirror] = useState<DesktopTimelineMirror>(EMPTY_TIMELINE_MIRROR)
+  const todayRef = useRef<HTMLDivElement>(null as unknown as HTMLDivElement)
+  // isSidepanelMode:panelMode 是不是「該展開 side panel」的模式——只有
+  // channels/timeline 這兩種正式功能會用到 side panel;demo-cards/demo-row/
+  // demo-map 這三種試做模式改成顯示在右側 .desktop-main(取代 ChatScreen,
+  // 見下方渲染邏輯),不佔用 side panel,故不能讓 side panel 因為 panelMode
+  // 有值就誤判成該展開,否則會出現一個空白的展開面板。
+  const isSidepanelMode = panelMode === 'channels' || panelMode === 'timeline'
+
+  // 切換行程時,先清空鏡像資料,避免新行程的 ChatScreen 還沒送出第一次鏡像前,
+  // side panel 短暫顯示上一個行程的時間軸內容。
+  useEffect(() => {
+    setTimelineMirror(EMPTY_TIMELINE_MIRROR)
+  }, [activeChannel?.id])
+
+  const onTimelineData = useCallback((data: DesktopTimelineMirror) => {
+    setTimelineMirror(data)
+  }, [])
+  // desktopChat:傳給 ChatScreen 的物件必須記憶化(useMemo),不能直接在 JSX
+  // 寫 desktopChat={{ onTimelineData }} 物件字面量——那樣每次 DesktopContent
+  // 重新渲染都會建立一個新參照,即使 onTimelineData 本身(已用 useCallback
+  // 包過)沒變。ChatScreen 內鏡像時間軸資料的 useEffect 依賴陣列裡有整個
+  // desktopChat 物件,參照每次都不同會讓該 effect 每次渲染都重新執行 →
+  // 呼叫 onTimelineData → setTimelineMirror → 觸發本元件重新渲染 → 產生新的
+  // desktopChat 物件 → 無窮迴圈(實測會直接跳出 React 的
+  // "Maximum update depth exceeded" 警告)。用 useMemo 讓這個物件只在
+  // onTimelineData 真的變動時才換參照,打斷這個迴圈。
+  const desktopChat = useMemo(() => ({ onTimelineData }), [onTimelineData])
 
   return (
     <>
       <div className="desktop-layout">
-        <aside className="desktop-sidebar">
-          <DesktopChannelList
-            cfg={cfg}
-            activeChannelID={activeChannel?.id ?? null}
-            onOpen={(c) => setActiveChannel(c)}
-          />
-          <DesktopUserMenu
-            cfg={cfg}
-            user={props.user}
-            isGuest={props.isGuest}
-            onAuthed={props.onAuthed}
-            onLogout={props.onLogout}
-            onOpenSettings={() => setSettingsOpen(true)}
-          />
+        <DesktopRail
+          panelMode={panelMode}
+          onSelect={(mode) => setPanelMode((cur) => (cur === mode ? null : mode))}
+          timelineDisabled={!activeChannel}
+          user={props.user}
+          isGuest={props.isGuest}
+          cfg={cfg}
+          onAuthed={props.onAuthed}
+          onLogout={props.onLogout}
+          onOpenSettings={() => setSettingsOpen(true)}
+          isDemo={!!props.isDemo}
+        />
+        <aside className={`desktop-sidepanel${isSidepanelMode ? '' : ' collapsed'}${panelMode === 'timeline' ? ' wide' : ''}`}>
+          <div className="desktop-sidepanel-inner">
+            {panelMode === 'channels' && (
+              <DesktopChannelList
+                cfg={cfg}
+                activeChannelID={activeChannel?.id ?? null}
+                onOpen={(c) => setActiveChannel(c)}
+              />
+            )}
+            {panelMode === 'timeline' && (
+              <div className="desktop-timeline-panel">
+                <div className="desktop-sidebar-head">
+                  <span className="desktop-sidebar-title">時間軸</span>
+                </div>
+                <div className="desktop-timeline-scroll">
+                  {!activeChannel ? (
+                    <div className="empty">選擇一個行程後顯示時間軸。</div>
+                  ) : timelineMirror.entries.length === 0 ? (
+                    <div className="empty">尚無行程內容。</div>
+                  ) : (
+                    <MultiTrackTimeline
+                      entries={timelineMirror.entries}
+                      todayRef={todayRef}
+                      updatingIDs={timelineMirror.updatingEntryIDs}
+                      taskPlaceholders={timelineMirror.taskPlaceholders}
+                      cfg={activeChannel.ownerID === props.user.id ? cfg : undefined}
+                      onEntryUpdated={timelineMirror.refetchEntries}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </aside>
         <main className="desktop-main">
-          {activeChannel ? (
+          {panelMode === 'demo-cards' ? (
+            <div className="desktop-demo-panel">
+              <div className="desktop-sidebar-head">
+                <span className="desktop-sidebar-title">推薦景點卡片(試做)</span>
+              </div>
+              <div className="desktop-timeline-scroll">
+                <RecommendedPlacesList places={FAKE_RECOMMENDED_PLACES} />
+              </div>
+            </div>
+          ) : panelMode === 'demo-row' ? (
+            <div className="desktop-demo-panel">
+              <div className="desktop-sidebar-head">
+                <span className="desktop-sidebar-title">推薦景點橫滑(試做)</span>
+              </div>
+              <div className="desktop-timeline-scroll">
+                <RecommendedPlacesRow places={FAKE_RECOMMENDED_PLACES} />
+              </div>
+            </div>
+          ) : panelMode === 'demo-map' ? (
+            <div className="desktop-demo-panel">
+              <div className="desktop-sidebar-head">
+                <span className="desktop-sidebar-title">推薦景點地圖(試做)</span>
+              </div>
+              <div className="desktop-timeline-scroll" style={{ padding: 0 }}>
+                <RecommendedPlacesMap places={FAKE_RECOMMENDED_PLACES} />
+              </div>
+            </div>
+          ) : activeChannel ? (
             <ChatScreen
               cfg={cfg}
               channel={activeChannel}
               user={props.user}
               onBack={() => setActiveChannel(null)}
+              desktopChat={desktopChat}
             />
           ) : (
             <div className="desktop-empty-state">選擇一個行程開始</div>
@@ -243,6 +362,95 @@ function DesktopContent(props: ContentProps) {
         />
       )}
     </>
+  )
+}
+
+// DesktopRail:最左緣 48px 固定寬的 icon rail(比照 VSCode activity bar / Slack
+// 頻道列)。上方兩顆圖示鈕切換 side panel 內容(再點一次啟用中的圖示會收合 panel),
+// 底部放 DesktopUserMenu。當前啟用的圖示用左緣 accent 豎條 + 底色標記(見 styles.css
+// .desktop-rail-btn.active)。
+function DesktopRail({
+  panelMode,
+  onSelect,
+  timelineDisabled,
+  user,
+  isGuest,
+  cfg,
+  onAuthed,
+  onLogout,
+  onOpenSettings,
+  isDemo,
+}: {
+  panelMode: PanelMode
+  onSelect: (mode: Exclude<PanelMode, null>) => void
+  timelineDisabled: boolean
+  user: User
+  isGuest: boolean
+  cfg: ClientConfig
+  onAuthed: (token: string, user: User, email: string) => void
+  onLogout: () => void
+  onOpenSettings: () => void
+  // isDemo:網址帶 ?demo 時為 true,才會多渲染下方三顆試做用按鈕
+  // (推薦景點卡片/橫滑/地圖,見 RecommendedPlaces.tsx/RecommendedPlacesMap.tsx)。
+  // 沒帶 ?demo 時 rail 維持現狀,不多出任何項目。
+  isDemo: boolean
+}) {
+  return (
+    <nav className="desktop-rail">
+      <div className="desktop-rail-buttons">
+        <button
+          className={`desktop-rail-btn${panelMode === 'channels' ? ' active' : ''}`}
+          onClick={() => onSelect('channels')}
+          title="頻道列表"
+        >
+          <List size={20} strokeWidth={1.8} />
+        </button>
+        <button
+          className={`desktop-rail-btn${panelMode === 'timeline' ? ' active' : ''}`}
+          onClick={() => !timelineDisabled && onSelect('timeline')}
+          disabled={timelineDisabled}
+          title={timelineDisabled ? '請先選擇一個行程' : '時間軸'}
+        >
+          <Calendar size={20} strokeWidth={1.8} />
+        </button>
+        {isDemo && (
+          <>
+            {/* 試做用導覽項目與正式功能之間的視覺分隔線,只在 ?demo 時出現,
+                避免試做項目跟正式功能混在一起難以分辨。 */}
+            <div className="desktop-rail-divider" />
+            <button
+              className={`desktop-rail-btn desktop-rail-btn-demo${panelMode === 'demo-cards' ? ' active' : ''}`}
+              onClick={() => onSelect('demo-cards')}
+              title="推薦景點卡片(試做)"
+            >
+              <Sparkles size={20} strokeWidth={1.8} />
+            </button>
+            <button
+              className={`desktop-rail-btn desktop-rail-btn-demo${panelMode === 'demo-row' ? ' active' : ''}`}
+              onClick={() => onSelect('demo-row')}
+              title="推薦景點橫滑(試做)"
+            >
+              <GalleryHorizontal size={20} strokeWidth={1.8} />
+            </button>
+            <button
+              className={`desktop-rail-btn desktop-rail-btn-demo${panelMode === 'demo-map' ? ' active' : ''}`}
+              onClick={() => onSelect('demo-map')}
+              title="推薦景點地圖(試做)"
+            >
+              <Map size={20} strokeWidth={1.8} />
+            </button>
+          </>
+        )}
+      </div>
+      <DesktopUserMenu
+        cfg={cfg}
+        user={user}
+        isGuest={isGuest}
+        onAuthed={onAuthed}
+        onLogout={onLogout}
+        onOpenSettings={onOpenSettings}
+      />
+    </nav>
   )
 }
 
@@ -463,12 +671,13 @@ function LangSelect({
 }
 
 // 桌面版「設定」dialog:點選 DesktopUserMenu 的「設定」項目後開啟,置中卡片彈窗,
-// 視覺沿用 RecommendedPlacesModal 的 .rp-modal-backdrop/.rp-modal(見 ChatScreen.tsx),
-// 內容則對應手機版 SettingsScreen 扣除「登出」(登出已是選單裡的獨立項目)。
-// 疊加 .settings-dialog-backdrop 只覆寫 position 從 absolute 改為 fixed:
-// RecommendedPlacesModal 用 absolute+inset:0 是相對最近的 relative 祖先(.desktop-main)
-// 定位,只蓋住右側聊天區;這裡是從 DesktopContent 頂層渲染,需要蓋住整個桌面版佈局
-// (含左側側欄),且不能被 .desktop-layout 的 overflow: hidden 裁切,故改用 fixed。
+// 視覺沿用原 RecommendedPlacesModal(已移除)留下的 .rp-modal-backdrop/.rp-modal
+// 樣式骨架(見 styles.css),內容則對應手機版 SettingsScreen 扣除「登出」
+// (登出已是選單裡的獨立項目)。疊加 .settings-dialog-backdrop 只覆寫 position
+// 從 absolute 改為 fixed:.rp-modal-backdrop 原本用 absolute+inset:0 是相對
+// 最近的 relative 祖先(.desktop-main)定位,只蓋住右側聊天區;這裡是從
+// DesktopContent 頂層渲染,需要蓋住整個桌面版佈局(含左側側欄),且不能被
+// .desktop-layout 的 overflow: hidden 裁切,故改用 fixed。
 function SettingsDialog({
   cfg,
   user,
@@ -827,7 +1036,7 @@ function PublicViewScreen({ token }: { token: string }) {
             placeholder="新增行程…"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
+            onKeyDown={(e) => isSubmitEnter(e) && !e.shiftKey && send()}
             disabled={sending}
           />
           <button onClick={send} disabled={sending || !draft.trim()}>

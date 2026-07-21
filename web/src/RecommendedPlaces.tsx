@@ -123,6 +123,22 @@ export function RecommendedPlacesList({ places }: { places: RecommendedPlace[] }
   )
 }
 
+// 橫向捲動版清單容器:比照 App Store/Netflix 那種橫向卡片列,復用 RecommendedPlaceCard
+// 渲染單卡邏輯,只把外層排列方式從垂直堆疊改成 flex row + overflow-x: auto。
+// 僅供 debug 工作台 UI 試做用,不接進正式對話畫面(見 DebugApp.tsx)。
+export function RecommendedPlacesRow({ places }: { places: RecommendedPlace[] }) {
+  if (places.length === 0) {
+    return <div className="empty">目前沒有推薦景點。</div>
+  }
+  return (
+    <div className="recommended-places-row">
+      {places.map((p, i) => (
+        <RecommendedPlaceCard key={`${p.name}-${i}`} place={p} />
+      ))}
+    </div>
+  )
+}
+
 // ---- 假資料(僅供 UI 展示,不對應真實地點資訊) ----
 // 涵蓋各種缺欄位情況:完整欄位 / 無 summary / 無評分(rating=0) / 無 photoUrl。
 export const FAKE_RECOMMENDED_PLACES: RecommendedPlace[] = [

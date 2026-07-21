@@ -1,10 +1,20 @@
 package wanttools
 
+// entry_query 改造說明(第二階段重構):這個工具原本查完直接把條目內容組成
+// 文字,透過 ctx.EmitToolResult 與回傳值送回給 LLM 自己讀取判斷(見 present_entries
+// 對應的舊文字組裝邏輯)。改造後,查詢邏輯本身不變(一樣呼叫
+// entryStore.ListEntriesByRange),但查到的結果不再回給 LLM 讀——改成轉換成
+// 前端 TripEntry 格式(TripEntryPayload,見 sink.go),透過 NotifyEntriesLoaded
+// 廣播 entries_loaded 事件推給前端,由前端合併進旅程清單表格供使用者查看/編輯。
+// Call 回傳給 LLM 的內容只剩一句簡短確認文字(如「已載入 3 筆到前端表格」),
+// 不含任何條目的具體內容——LLM 只需要知道查詢範圍有沒有觸發成功,不需要(也
+// 不會)拿到資料本身去做任何判斷或回答,這是這次設計的核心。
+
 import (
 	"fmt"
-	"strings"
 	"time"
 
+	"github.com/tim72117/tripace/internal/model"
 	"github.com/tim72117/tripace/internal/store"
 	"github.com/tim72117/want/types"
 )
@@ -24,12 +34,14 @@ func init() {
 }
 
 // QueryEntriesDeclaration 是給 LLM 看的工具宣告。
-// 用於查詢頻道中已記錄的條目(record_entry 記下的待辦/行程/會議),可選時間範圍。
+// 用於決定查詢範圍、把頻道中已記錄的條目(待辦/行程/會議等)載入到前端的
+// 旅程清單表格——查到的結果不會回傳給 LLM 閱讀,LLM 只會收到一句確認文字,
+// 實際內容由前端表格顯示,供使用者查看與編輯。
 var QueryEntriesDeclaration = types.ToolDeclaration{
 	Name: "entry_query",
-	Description: "查詢頻道中已記錄的條目(待辦、行程、會議等)。" +
-		"當使用者在提問、想知道某段時間有什麼安排時呼叫。可用 from / to 限定時間範圍。" +
-		"回傳符合的條目清單,據此回答使用者。",
+	Description: "依時間範圍查詢頻道中已記錄的條目(待辦、行程、會議等),把查到的結果載入到前端的旅程清單表格供使用者查看與編輯。" +
+		"當使用者在提問、想知道某段時間有什麼安排,或你在記錄新條目前需要確認是否已經記過同一件事時呼叫。可用 from / to 限定時間範圍。" +
+		"注意:這個工具不會把查到的條目內容回傳給你——回傳的只是一句確認文字(如「已載入 3 筆到前端表格」)與筆數,實際內容顯示在前端表格,不能拿來回答使用者或做任何判斷。",
 	Type: "sync",
 	Parameters: map[string]interface{}{
 		"type": "OBJECT",
@@ -55,6 +67,8 @@ type QueryEntriesTool struct {
 }
 
 // Call 執行查詢:回傳 []ResultContentBlock(want 新規格),結果 map 以 ctx.EmitToolResult 發送。
+// 查到的條目不進入回傳內容——轉換成 TripEntryPayload 後透過 NotifyEntriesLoaded
+// 廣播給前端,回傳與 EmitToolResult 都只帶簡短確認文字與筆數。
 func (t *QueryEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]types.ResultContentBlock, error) {
 	// from / to 是 LLM 給的英文日期語詞(範圍以兩個日期點表達),用 when 換算成絕對日期。
 	// 查詢只需日期粒度,不需時刻。
@@ -77,27 +91,51 @@ func (t *QueryEntriesTool) Call(args types.ToolArguments, ctx types.ToolContext)
 		return nil, fmt.Errorf("store 未初始化")
 	}
 	// channelID 取自本次呼叫的 SessionEnvs(agent 不需自己帶)。
-	entries, err := entryStore.ListEntriesByRange(ChannelFrom(ctx), from, to)
+	channelID := ChannelFrom(ctx)
+	entries, err := entryStore.ListEntriesByRange(channelID, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("查詢條目失敗: %w", err)
 	}
 
-	// 把條目整理成給 LLM 閱讀的文字。
-	var sb strings.Builder
+	payload := toTripEntryPayloads(entries)
+	NotifyEntriesLoaded(channelID, payload)
+
+	var confirm string
 	if len(entries) == 0 {
-		sb.WriteString("(沒有符合的條目)")
+		confirm = "查無符合條目"
 	} else {
-		for _, e := range entries {
-			sb.WriteString(fmt.Sprintf("・[entryID=%s] %s %s\n", e.ID, describeTime(e.Start, e.StartTime, e.End, e.EndTime), e.Title))
-		}
+		confirm = fmt.Sprintf("已載入 %d 筆到前端表格", len(entries))
 	}
-	summary := strings.TrimRight(sb.String(), "\n")
 
 	ctx.EmitToolResult(map[string]interface{}{
-		"summary": summary,
+		"summary": confirm,
 		"count":   len(entries),
 	})
-	return []types.ResultContentBlock{types.TextBlock(summary)}, nil
+	return []types.ResultContentBlock{types.TextBlock(confirm)}, nil
+}
+
+// toTripEntryPayloads 把 store 查到的 model.Entry 轉成前端 TripEntry 格式
+// (TripEntryPayload,見 sink.go),欄位對齊 server/tools/clienttools.yaml 的
+// title/date/time/note 命名——date 取 model.Entry.Start、time 取 StartTime
+// (model.Entry 的日期/時刻本就分開存放,直接對應,不需另外拆解字串)。
+// Note 是 *string(可為 nil),nil 時轉成空字串,對齊 TripEntry.note 恆為 string
+// 的欄位型別(前端沒有「未設定」與「空字串」的區別)。
+func toTripEntryPayloads(entries []model.Entry) []TripEntryPayload {
+	out := make([]TripEntryPayload, 0, len(entries))
+	for _, e := range entries {
+		note := ""
+		if e.Note != nil {
+			note = *e.Note
+		}
+		out = append(out, TripEntryPayload{
+			ID:    e.ID,
+			Title: e.Title,
+			Date:  e.Start,
+			Time:  e.StartTime,
+			Note:  note,
+		})
+	}
+	return out
 }
 
 func (t *QueryEntriesTool) RenderToolUse(args types.ToolArguments) string {

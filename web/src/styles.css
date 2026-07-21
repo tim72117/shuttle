@@ -358,8 +358,24 @@ body {
 }
 .bubble.mine {
   align-self: flex-end;
-  background: var(--ios-blue);
-  color: #fff;
+  /* 降低深度:原本純色 --ios-blue 太深;改用中性淡色而非棕色系調淡透明度
+     (比照 .avatar-empty 的既有模式:淡底 --ios-sep + 深棕字 --color-dark,
+     維持整體設計語言一致)。--ios-sep 跟 --color-dark 對比度 8.89:1,可讀性
+     遠超 WCAG AA 門檻;跟卡片背景對比度 1.32:1,雖淡但仍可辨識,泡泡靠
+     align-self: flex-end 與既有 box-shadow 撐住輪廓。只影響這個泡泡,
+     不動全域 --ios-blue 變數,按鈕/連結/焦點框等其餘 22 處引用不受影響。 */
+  background: var(--ios-sep);
+  color: var(--color-dark);
+}
+/* LLM 回答輸出文字時不套用泡泡外觀(見 MessageBubble 的 bare 判斷):
+   拿掉卡片背景/圓角/陽影/內距,直接呈現純文字;寬度也不再限制在 78%,
+   否則沒有卡片邊界視覺支撐時,一段較長文字仍被截斷會顯得不自然。 */
+.bubble.bare {
+  max-width: 100%;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
 }
 .bubble .text {
   font-size: 17px;
@@ -546,6 +562,11 @@ body {
 .bubble-group.mine {
   align-self: flex-end;
   align-items: flex-end;
+  /* 加大與上一則訊息的間距:父層 .chat-messages/.chat-overlay-inner 的
+     gap: 10px 是所有訊息共用的基礎間距,這裡額外疊加 margin-top 讓使用者
+     這則泡泡的分段感更明顯,不影響其他訊息之間(如連續兩則助手回答)維持
+     原本 10px。 */
+  margin-top: 12px;
 }
 .bubble-group .bubble {
   max-width: 100%;
@@ -1176,6 +1197,7 @@ body {
 /* 對話區：相對定位容器，讓 composer 可以 absolute 貼底浮空 */
 .chat-area {
   flex: 1 1 auto;
+  min-height: 0; /* 解除 flex 子項預設撐開父層的行為,讓內部改由 .screen-body 自己捲動 */
   position: relative;
   overflow: hidden;
   display: flex;
@@ -1183,7 +1205,19 @@ body {
 }
 .chat-area .screen-body {
   flex: 1 1 auto;
-  padding-bottom: 80px; /* 預留 composer 高度，最後一則訊息能完整滾出 */
+  min-height: 0; /* 同上:沒有這行,內容過長時會撐開 .chat-area 進而撐開整頁,而非自己內部捲動 */
+  padding-bottom: 104px; /* 預留 composer 高度(約80px)+24px間隙,捲到底時最後一則訊息跟輸入框之間留一點呼吸空間,不緊貼在一起 */
+}
+
+/* 桌面版對話區(desktopChat 分支專用):引導文字/訊息泡泡在同一個 .screen-body
+   容器內、走一般文件流,不再套用手機版的 .chat-overlay 浮層疊層+獨立捲動設計
+   (桌面版時間軸已在左側 side panel,右欄底層沒有需要被浮層蓋住看見的內容)。
+   補上跟原本 .chat-overlay-inner 一致的 flex 排版,讓 .bubble-group 之間維持
+   原有的 10px 間距(.bubble-group 本身不帶 margin,依賴父層 gap)。 */
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* 對話浮層：覆蓋在時間軸上方，毛玻璃背景，從 composer 往上延伸 */
@@ -1214,7 +1248,9 @@ body {
   gap: 10px;
 }
 
-/* 輸入列：浮空固定在對話區底部 */
+/* 輸入列：浮空固定在對話區底部,整列包在一張卡片容器裡(白底/圓角/陰影
+   只在這層出現一次),內部的 input/按鈕不再各自帶白底邊框陰影——視覺上
+   呈現成一個完整獨立的對話框,而非各自漂浮的元件群。 */
 .composer {
   position: absolute;
   bottom: 0;
@@ -1228,12 +1264,20 @@ body {
   pointer-events: none;
 }
 
-/* input + send 按鈕同一列 */
+/* input + send 按鈕同一列,這層就是「卡片」本身:白底/圓角/陰影集中在此。 */
 .composer-row {
   pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 12px;
+  background: var(--ios-card);
+  border-radius: 28px;
+  padding: 8px 8px 8px 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.15s;
+}
+.composer-row:focus-within {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
 }
 .composer input,
 .composer button {
@@ -1241,19 +1285,11 @@ body {
 }
 .composer input {
   flex: 1;
-  flex: 1;
-  border: 1.5px solid var(--ios-sep);
-  border-radius: 24px;
-  padding: 11px 18px;
+  border: none;
+  padding: 8px 0;
   font-size: 17px;
   outline: none;
-  background: var(--ios-card);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.composer input:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
+  background: transparent;
 }
 .composer button {
   flex: 0 0 auto;
@@ -1281,33 +1317,17 @@ body {
   outline-offset: 2px;
 }
 
-/* 功能鈕(推薦/對話):跟送出鈕同尺寸圓形,底色改用卡片白+邊框,
-   跟送出鈕(強調色實心)區分「功能切換」與「送出動作」的視覺層級。 */
+/* 功能鈕(推薦/對話):跟送出鈕同尺寸圓形,不再自帶白底/邊框/陰影
+   (外層 .composer-row 已提供卡片背景),只用顏色跟送出鈕(強調色實心)
+   區分「功能切換」與「送出動作」的視覺層級。 */
 .composer-fn-btn {
-  background: var(--ios-card) !important;
+  background: transparent !important;
   color: var(--color-accent) !important;
-  border: 1.5px solid var(--ios-sep) !important;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 .composer-fn-btn:disabled {
-  background: var(--ios-card) !important;
+  background: transparent !important;
   color: var(--ios-gray) !important;
   opacity: 0.6;
-}
-
-/* 對話鈕展開動畫:input 從 0 寬度(圓鈕收合處)平滑展開到撐滿剩餘空間。
-   用 max-width 而非 width,讓 flex:1 仍決定展開後的最終寬度。 */
-.composer input {
-  animation: composer-input-expand 0.22s cubic-bezier(0.32, 0.72, 0, 1);
-}
-@keyframes composer-input-expand {
-  from { max-width: 0; opacity: 0; padding-left: 0; padding-right: 0; }
-  to { max-width: 100%; opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .composer input {
-    animation: none;
-  }
 }
 
 /* 查詢結果 */
@@ -1851,8 +1871,118 @@ pre {
   overflow: hidden;
 }
 
-/* 側欄:固定寬度,常駐顯示頻道列表 + 使用者設定入口 */
-.desktop-sidebar {
+/* ---- icon rail(最左緣 48px 固定寬,VSCode activity bar / Slack 頻道列模式):
+   上方兩顆圖示鈕切換 side panel 內容,底部是 DesktopUserMenu。---- */
+.desktop-rail {
+  flex: 0 0 48px;
+  width: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--ios-card);
+  border-right: 1px solid var(--ios-sep);
+  min-height: 0;
+  padding: 8px 0;
+}
+.desktop-rail-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+.desktop-rail-btn {
+  position: relative;
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--ios-gray);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.desktop-rail-btn:hover:not(:disabled) {
+  background: var(--ios-bg);
+  color: var(--color-accent);
+}
+.desktop-rail-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.desktop-rail-btn:disabled {
+  color: var(--ios-sep);
+  cursor: not-allowed;
+}
+/* 啟用中的圖示:左緣 accent 豎條 + 淡底色標記(比照 VSCode activity bar)。 */
+.desktop-rail-btn.active {
+  color: var(--color-accent);
+  background: var(--ios-bg);
+}
+.desktop-rail-btn.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--color-accent);
+}
+/* 試做用導覽項目(?demo）與正式功能的視覺區隔:一條細分隔線,
+   按鈕本身圖示顏色也偏淡一階,一眼可辨識是實驗性質、非正式功能。 */
+.desktop-rail-divider {
+  width: 24px;
+  height: 1px;
+  margin: 6px auto;
+  background: var(--ios-sep);
+}
+.desktop-rail-btn-demo {
+  color: var(--ios-gray);
+  opacity: 0.75;
+}
+.desktop-rail-btn-demo:hover:not(:disabled) {
+  opacity: 1;
+}
+.desktop-rail-btn-demo.active {
+  opacity: 1;
+}
+/* rail 內的使用者選單:只顯示頭像(rail 只有 48px 寬,放不下名稱文字),
+   popover 往右彈出蓋住 side panel(而非 side panel 原本的往上展開),
+   透過 .desktop-rail .desktop-user-* 選擇器覆寫,不影響其他地方共用的樣式。 */
+.desktop-rail .desktop-user-menu {
+  width: 100%;
+  border-top: none;
+  padding: 8px 0;
+  margin-top: auto;
+}
+.desktop-rail .desktop-user-trigger {
+  justify-content: center;
+  padding: 8px 0;
+}
+/* 頭像縮小(38px→30px):原尺寸在 48px 寬的 rail 裡左右只留 5px,比上方
+   .desktop-rail-btn 圖示(20px,左右留 14px)侷促很多,視覺上明顯擠壓。
+   縮小後左右留 9px,呼吸空間跟圖示按鈕的量級接近,同時仍比純圖示大一圈,
+   保留頭像該有的存在感(不縮到跟圖示同尺寸,兩者承載的資訊份量不同)。 */
+.desktop-rail .desktop-user-trigger .avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 14px;
+}
+.desktop-rail .desktop-user-trigger .grow {
+  display: none;
+}
+.desktop-rail .desktop-user-popover {
+  left: calc(100% + 6px);
+  right: auto;
+  bottom: 8px;
+  width: 260px;
+}
+
+/* side panel:改造自原本的 desktop-sidebar,內容可切換(頻道列表/時間軸)、
+   可收合(主區跟著縮放的 push 模式,非 overlay);寬度切換與收合都走 CSS transition。 */
+.desktop-sidepanel {
   flex: 0 0 272px;
   width: 272px;
   display: flex;
@@ -1860,6 +1990,40 @@ pre {
   background: var(--ios-card);
   border-right: 1px solid var(--ios-sep);
   min-height: 0;
+  overflow: hidden;
+  transition: flex-basis 0.2s ease, width 0.2s ease, border-color 0.2s ease;
+}
+.desktop-sidepanel.wide {
+  flex-basis: 380px;
+  width: 380px;
+}
+.desktop-sidepanel.collapsed {
+  flex-basis: 0;
+  width: 0;
+  border-right-color: transparent;
+}
+/* inner 維持完整寬度渲染內容,收合時靠外層 width:0 裁掉,避免收合過程中內容
+   本身被壓縮換行(transition 期間看起來會很醜)。 */
+.desktop-sidepanel-inner {
+  width: 272px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.desktop-sidepanel.wide .desktop-sidepanel-inner {
+  width: 380px;
+}
+.desktop-timeline-panel {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.desktop-timeline-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 8px 12px;
 }
 
 /* 側欄上半：頻道列表 */
@@ -2038,6 +2202,16 @@ pre {
   color: var(--ios-gray);
   font-size: 16px;
 }
+/* 試做導覽項目(?demo,見 App.tsx DesktopRail)點擊後顯示在 .desktop-main
+   (取代 ChatScreen),跟 .desktop-timeline-panel 同一種撐滿容器高度的
+   flex column 結構,只是換了個 class 名以區分「這是主區內容」而非
+   「side panel 內容」。 */
+.desktop-demo-panel {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 
 /* ---- 推薦景點卡片(RecommendedPlaces.tsx) ---- */
 /* 直向列表:手機寬度下卡片獨佔一列;桌面版用 max-width 限制單卡寬度、置中排列。 */
@@ -2161,9 +2335,11 @@ pre {
   }
 }
 
-/* ---- 推薦景點彈出視窗(RecommendedPlacesModal):recommend_nearby 查詢完成後
-   自動彈出,置中顯示、背景遮罩,對齊 .ask-user-backdrop 的浮層模式但用置中卡片
-   (內容是可捲動清單,不適合底部 sheet)。 ---- */
+/* ---- 置中卡片彈窗骨架(.rp-modal*):原為 recommend_nearby 查詢完成後彈出的
+   RecommendedPlacesModal 所用,對齊 .ask-user-backdrop 的浮層模式但用置中卡片
+   (內容是可捲動清單,不適合底部 sheet)。該彈窗已移除(推薦景點改成掛在觸發
+   它的訊息底下顯示,見 ChatScreen.tsx MessageBubble),但這組樣式繼續由桌面版
+   「設定」dialog(SettingsDialog,見下方)沿用,故保留。 ---- */
 .rp-modal-backdrop {
   position: absolute;
   inset: 0;
@@ -2220,8 +2396,8 @@ pre {
 /* ---- 桌面版「設定」dialog(SettingsDialog,見 App.tsx):骨架沿用
    .rp-modal-backdrop/.rp-modal(遮罩、置中、圓角、陰影、進場動畫皆相同),
    只疊加覆寫 position 為 fixed。原因:SettingsDialog 是從 DesktopContent
-   頂層(.desktop-layout 的兄弟節點)渲染,而非像 RecommendedPlacesModal 那樣
-   渲染在有 position: relative 的 .desktop-main 內部——若沿用 absolute+inset:0,
+   頂層(.desktop-layout 的兄弟節點)渲染,而非像原本的 RecommendedPlacesModal
+   那樣渲染在有 position: relative 的 .desktop-main 內部——若沿用 absolute+inset:0,
    會相對到更上層(甚至沒有 relative 祖先時相對 initial containing block),
    且 .desktop-layout 本身設有 overflow: hidden,side bar 只有 272px 寬,
    都可能讓彈窗被裁切或跑位。改用 fixed 可確保無論掛在哪一層 DOM,

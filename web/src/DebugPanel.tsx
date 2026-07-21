@@ -7,7 +7,7 @@ import type { Channel, Entry } from './types'
 // Debug panel:三個分頁 —— API 交易紀錄、WS 事件、目前頻道的 Entry 條目。
 // API:依時間倒序列出每筆交易,點開看原始 request/response JSON。
 // WS 事件:後端主動推送的介面更新事件(entries_updated/ask_user/task_created/
-//   recommended_places 等,見 server/internal/api/ws.go 的各個 Notify* 方法)。
+//   entries_loaded 等,見 server/internal/api/ws.go 的各個 Notify* 方法)。
 // Entries:看 record_entry 工具記了哪些結構化條目(item + 時間)。
 
 type DebugTab = 'api' | 'ws' | 'entries'
@@ -72,7 +72,7 @@ export function DebugPanel({
           {wsEvents.length === 0 ? (
             <div style={{ color: '#6e6e78', padding: 16, textAlign: 'center' }}>
               尚無事件。後端透過 WebSocket 主動推送的介面更新事件(entries_updated、
-              recommended_places 等)會即時顯示在這裡。
+              entries_loaded 等)會即時顯示在這裡。
             </div>
           ) : (
             wsEvents.map((e) => <WsEventRow key={e.id} evt={e} />)

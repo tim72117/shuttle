@@ -1,52 +1,106 @@
-# clienttools.yaml — POC 用工具定義:操作一份「只存在前端記憶體」的旅程 entry 清單。
+# clienttools.yaml — POC 用工具定義:操作「只存在前端記憶體」的旅程 entry 清單。
 #
 # appId 固定為 "clienttools":web/src/ClientToolsDemo.tsx(DebugApp.tsx 的試做
 # 區塊)連線時,hello.appId 帶這個值,後端 clientToolsSession.handleHello
 # (server/internal/api/clienttools_ws.go)依此從 toolschema.Registry 解析出
-# 下面這組工具清單回傳給前端(ack.toolNames),同時 llm.NewClientToolsAnalyzer
-# (server/internal/llm/clienttools_agent.go)註冊的獨立 agent role 白名單也
-# 鎖定只暴露這幾個工具給 LLM,不會跟正式的 assistant agent
-# (server/internal/llm/assistant_agent.go)或其 entry_add/entry_query 等
-# 工具混在一起。
+# 下面這組工具清單回傳給前端(ack.toolNames)。llm.NewClientToolsAnalyzer
+# (server/internal/llm/clienttools_agent.go)註冊的獨立 clienttoolsRole 白名單
+# 也只暴露這幾個工具給這個試做頁面專用的 LLM 對話——但這些工具本身現在也
+# 同時被正式的 assistant agent(server/internal/llm/assistant_agent.go)使用
+# (取代原本直接寫 Postgres 的 entry_add/entry_update),兩個 role 共用 want
+# 全域 tool registry 裡的同一份工具定義,只是各自的對話/推論仍走各自獨立的
+# orchestrator,不會互相干擾(見 clienttools_agent.go 開頭註解)。
 #
 # 型別(kind)怎麼選,是這份試做的核心設計決定:
-# - trip_entry_add / trip_entry_list  → query:LLM 需要拿到「真正發生的結果」
-#   才能接下去做事——新增後要知道新 entry 的 id 才能之後引用它做刪除/修改;
-#   查詢清單則本來就是要把前端資料讀回給 LLM 看。兩者都必須阻塞等前端真的
-#   把資料回傳,不能只是「轉發出去就當作完成」。
+# - trip_entry_add / trip_entry_list / trip_list_batches → query:LLM 需要拿到
+#   「真正發生的結果」才能接下去做事——新增後要知道新 entry 的 id 才能之後
+#   引用它做刪除/修改;查詢清單/查詢批次列表則本來就是要把前端資料讀回給
+#   LLM 看。三者都必須阻塞等前端真的把資料回傳,不能只是「轉發出去就當作
+#   完成」。
 # - trip_entry_delete / trip_entry_update → action:前端實際執行的細節(改了
 #   哪些欄位、剩下幾筆)LLM 不需要逐一知道,只需要知道「有沒有成功執行」,
 #   用 forwardingTool 的 fire-and-forget 語意(見 server/internal/clienttools/
 #   tool.go)已經足夠——但仍然是阻塞等前端回報成功/失敗,不是送出就不管。
+#
+# 多批次(key)支援:旅程清單不再是單一一份,而是可能同時存在多批獨立清單
+# (例如「東京三天」一批、「大阪兩天」另一批)。trip_entry_add/delete/update/
+# list 都新增了必填的 key 參數,指定要操作哪一批。key 由 LLM 自訂字串(語意化
+# 命名,如 tokyo_trip)——沒有採用「前端產生時間戳記+亂數字串」的方案,因為
+# 那樣 LLM 第一次呼叫 trip_entry_add 時勢必還不知道要填什麼 key(雞生蛋問題:
+# key 要嘛由 LLM 先想好傳入,要嘛得讓 add 支援「不傳 key 由前端生成」的例外
+# 路徑,徒增複雜度)。改用「LLM 自訂字串,不強制格式」後,流程單純:LLM 决定
+# 要用哪個 key(沿用現有或自己取一個新的),trip_entry_add 的 returns 一律
+# 回傳 key 讓 LLM 在對話 context 裡記住這次用的是哪一批。LLM 在動作前應先呼叫
+# trip_list_batches 查詢現有批次,自行判斷這次使用者説的是延續某一批還是
+# 全新規劃。
 appId: clienttools
 thought: |
   你是一個嵌入在網頁裡的旅程小幫手。使用者不是在跟你聊天,而是在對這個網頁下指令。
-  網頁上有一份旅程 entry 清單(只存在使用者瀏覽器的記憶體裡,尚未存進任何後端資料庫)。
+  網頁上可能同時存在多份獨立的旅程 entry 清單,各自用一個 key 字串識別(只存在
+  使用者瀏覽器的記憶體裡,尚未存進任何後端資料庫)。
 
   當使用者的訊息要求新增/刪除/修改清單裡的項目,或想知道清單目前有什麼時,
   呼叫對應的單一工具去操作或查詢它——實際執行的是網頁,不是你。
 
-  - 使用者要「新增」一筆行程時,呼叫 trip_entry_add。新增前不需要先查清單。
+  # 先決定要操作哪一批(key)
+
+  trip_entry_add / trip_entry_delete / trip_entry_update / trip_entry_list
+  都需要一個 key 參數,代表要操作哪一批清單。**不確定目前討論的內容屬於哪一批
+  時,先呼叫 trip_list_batches 查詢目前已存在哪些批次**(每批會附上摘要,如
+  項目數、日期範圍、代表性標題),再自行判斷:
+  - 若使用者這次講的內容明顯是延續某個現存批次(時間、地點、主題相符)→
+    沿用該批次的 key。
+  - 若明顯是全新的規劃(不同地點/主題,或使用者提到「另外規劃一個」「新的
+    行程」等)→ 自己取一個新的 key。新 key 用簡短的語意化英文/拼音字串
+    (如 tokyo_trip、osaka_2days),不要用中文或空白;若無從判斷語意,退回
+    用時間戳記格式(如 20260721_1)避免撞名。
+  - 只有一批正在討論、或使用者從未表明要分批時,固定沿用同一個 key 即可,
+    不需要每次都查 trip_list_batches——只有「不確定是不是同一批」時才查。
+  - trip_entry_add 執行後的回傳一律包含這次用的 key,記住它,同一輪對話裡
+    後續的新增/查詢/修改若仍屬於同一批,直接沿用,不要重新臆測或詢問使用者。
+
+  # 各工具的用法
+
+  - 使用者要「新增」一筆行程時,呼叫 trip_entry_add(帶正確的 key)。新增前
+    不需要先查清單內容,但若不確定 key,先查 trip_list_batches。
   - 使用者要「刪除」或「修改」某一筆時,若你不確定正確的 id,先呼叫
-    trip_entry_list 查目前清單,找到對應的那一筆再呼叫 trip_entry_delete /
-    trip_entry_update。不要憑猜測編造 id。
-  - 使用者單純問「現在清單裡有什麼」時,呼叫 trip_entry_list 查詢,再用查到
-    的資料回答,不要編造內容。
+    trip_entry_list(帶正確的 key)查目前清單,找到對應的那一筆再呼叫
+    trip_entry_delete / trip_entry_update。不要憑猜測編造 id 或 key。
+  - 使用者單純問「現在清單裡有什麼」時,先確定要問哪一批(不確定就先查
+    trip_list_batches),再呼叫 trip_entry_list 查詢,用查到的資料回答,不要
+    編造內容。
+  - trip_entry_list 除了 key,offset(從第幾筆開始,0-based)與 limit(單次
+    最多回傳幾筆)也都必填,不能省略。不要假設清單一定很短——先用 offset=0
+    查一批,查到的 total 若大於目前已看過的筆數,代表還有更多,要用下一個
+    offset(前一次的 offset + limit)繼續呼叫,直到涵蓋完 total 筆或已經
+    蒐集到足夠回答使用者問題的資訊為止。
+  - trip_list_batches 的 offset(從第幾筆開始,0-based)與 limit(單次最多
+    回傳幾批)也都必填,不能省略。不要假設批次數量一定很少——先用 offset=0
+    查一批,查到的 total 若大於目前已看過的批次數,代表還有更多,要用下一個
+    offset(前一次的 offset + limit)繼續呼叫,直到涵蓋完 total 筆或已經
+    蒐集到足夠判斷的資訊為止。
 
   完成工具呼叫後,用簡短的一句話告訴使用者做了什麼(例如「已新增『東京晴空塔』
-  到 7/18」),不要聲稱自己做了工具沒有實際完成的事,也不要要求使用者等待
-  ——工具呼叫本身就是動作的執行。
+  到 7/18(批次 tokyo_trip)」),不要聲稱自己做了工具沒有實際完成的事,也不要
+  要求使用者等待——工具呼叫本身就是動作的執行。
 
 tools:
   - name: trip_entry_add
     description: >-
       在前端的旅程 entry 清單新增一筆新項目。使用者想加入一筆新的行程/景點/
-      活動時呼叫。成功後會回傳新項目的 id,之後若要刪除或修改這筆,要用這個 id。
+      活動時呼叫。成功後會回傳新項目的 id 與這次用的 key,之後若要刪除或
+      修改這筆,要用這個 id 與 key。
     kind: query
     parameters:
       type: object
       description: 新增一筆旅程 entry 所需的欄位。
       properties:
+        key:
+          type: string
+          description: >-
+            要新增進哪一批清單的識別字串。延續現有批次就填該批次的 key;
+            全新規劃就自訂一個新的語意化 key(如 tokyo_trip)。不確定目前
+            有哪些批次時,先呼叫 trip_list_batches 查詢。
         title:
           type: string
           description: 項目標題,例如「東京晴空塔」、「築地市場早餐」。
@@ -60,6 +114,7 @@ tools:
           type: string
           description: 補充備註,例如地點、注意事項。沒有時留空字串。
       required:
+        - key
         - title
         - date
     returns:
@@ -69,6 +124,9 @@ tools:
         id:
           type: string
           description: 新項目的 id,之後刪除/修改要用這個。
+        key:
+          type: string
+          description: 這次實際存入的批次 key——記住它,後續同一批的操作要沿用。
         title:
           type: string
           description: 實際存入的標題(回顯確認)。
@@ -78,29 +136,36 @@ tools:
 
   - name: trip_entry_delete
     description: >-
-      從前端的旅程 entry 清單刪除一筆項目。需要先知道正確的 id
-      ——不確定時先呼叫 trip_entry_list 查詢。
+      從前端的旅程 entry 清單刪除一筆項目。需要先知道正確的 key 與 id
+      ——不確定時先呼叫 trip_list_batches / trip_entry_list 查詢。
     kind: action
     parameters:
       type: object
-      description: 要刪除的項目 id。
+      description: 要刪除的項目所屬的 key 與 id。
       properties:
+        key:
+          type: string
+          description: 該項目所屬批次的 key。不確定時先呼叫 trip_list_batches 查詢現有批次。
         id:
           type: string
           description: 要刪除的項目 id(呼叫 trip_entry_list 或先前 trip_entry_add 的回傳取得)。
       required:
+        - key
         - id
 
   - name: trip_entry_update
     description: >-
       修改前端旅程 entry 清單中既有一筆項目的欄位。只需傳入要改的欄位,
-      其餘留空字串表示不修改。需要先知道正確的 id
-      ——不確定時先呼叫 trip_entry_list 查詢。
+      其餘留空字串表示不修改。需要先知道正確的 key 與 id
+      ——不確定時先呼叫 trip_list_batches / trip_entry_list 查詢。
     kind: action
     parameters:
       type: object
-      description: 要修改的項目 id 與要更新的欄位。
+      description: 要修改的項目所屬的 key、id,與要更新的欄位。
       properties:
+        key:
+          type: string
+          description: 該項目所屬批次的 key。不確定時先呼叫 trip_list_batches 查詢現有批次。
         id:
           type: string
           description: 要修改的項目 id。
@@ -117,24 +182,41 @@ tools:
           type: string
           description: 新備註。留空字串表示不修改。
       required:
+        - key
         - id
 
   - name: trip_entry_list
     description: >-
-      查詢前端旅程 entry 清單目前的完整內容。使用者問「清單裡有什麼」,
-      或你需要先找到正確 id 才能刪除/修改某一筆時呼叫。
+      分頁查詢前端旅程 entry 清單(某一批)的內容。使用者問「清單裡有什麼」,
+      或你需要先找到正確 id 才能刪除/修改某一筆時呼叫。key、offset、limit
+      皆必填、不能省略——清單筆數可能很多,不要假設一次就能拿到全部:回傳的
+      total 是該批清單總筆數,若大於你目前已查到的筆數,代表還沒查完,要用
+      下一個 offset(前一次的 offset + limit)再呼叫一次繼續翻頁。
     kind: query
     parameters:
       type: object
-      description: 無參數,直接呼叫查詢目前完整清單。
-      properties: {}
+      description: 分頁查詢參數,key、offset、limit 皆為必填。
+      properties:
+        key:
+          type: string
+          description: 要查詢哪一批清單。不確定目前有哪些批次時,先呼叫 trip_list_batches 查詢。
+        offset:
+          type: integer
+          description: 從第幾筆開始查詢(0-based)。查第一批請填 0。
+        limit:
+          type: integer
+          description: 單次最多回傳幾筆。
+      required:
+        - key
+        - offset
+        - limit
     returns:
       type: object
-      description: 前端回報的目前清單內容。
+      description: 前端回報的分頁查詢結果。
       properties:
         entries:
           type: array
-          description: 目前清單裡的每一筆項目。
+          description: 這一頁查到的項目(從 offset 開始,最多 limit 筆)。
           items:
             type: object
             description: 一筆旅程 entry。
@@ -154,3 +236,62 @@ tools:
               note:
                 type: string
                 description: 備註,可能為空字串。
+        total:
+          type: integer
+          description: 清單目前的總筆數(不受 offset/limit 影響)。用來判斷是否已查完整份清單、還要不要用下一個 offset 繼續翻頁。
+
+  - name: trip_list_batches
+    description: >-
+      分頁查詢目前前端記憶體裡存在哪些批次(key)的旅程清單,每批附上摘要資訊
+      (筆數、日期範圍、代表性標題)。在新增/查詢/修改任何一筆前,若不確定
+      使用者這次講的內容屬於哪一批、或該沿用現有 key 還是開新的,先呼叫這個
+      工具查看現況再自行判斷。offset、limit 皆必填、不能省略——批次數量可能
+      持續累積,不要假設一次就能拿到全部:回傳的 total 是目前批次總數,若
+      大於你目前已查到的筆數,代表還沒查完,要用下一個 offset(前一次的
+      offset + limit)再呼叫一次繼續翻頁。
+    kind: query
+    parameters:
+      type: object
+      description: 分頁查詢參數,offset、limit 皆為必填。
+      properties:
+        offset:
+          type: integer
+          description: 從第幾批開始查詢(0-based)。查第一批請填 0。
+        limit:
+          type: integer
+          description: 單次最多回傳幾批。
+      required:
+        - offset
+        - limit
+    returns:
+      type: object
+      description: 前端回報的分頁查詢結果。
+      properties:
+        batches:
+          type: array
+          description: 這一頁查到的批次(從 offset 開始,最多 limit 筆),依最近建立/修改排序。
+          items:
+            type: object
+            description: 一個批次的摘要,足夠讓你判斷「這批大概是什麼」。
+            properties:
+              key:
+                type: string
+                description: 這批清單的 key,後續操作這批要帶這個值。
+              count:
+                type: integer
+                description: 這批目前有幾筆項目。
+              firstDate:
+                type: string
+                description: 這批項目中最早的日期('YYYY-MM-DD'),沒有項目時為空字串。
+              lastDate:
+                type: string
+                description: 這批項目中最晚的日期('YYYY-MM-DD'),沒有項目時為空字串。
+              sampleTitles:
+                type: array
+                description: 最多三筆代表性標題(依項目順序取前幾筆),用來快速判斷這批的主題。
+                items:
+                  type: string
+                  description: 一筆項目標題。
+        total:
+          type: integer
+          description: 目前批次的總數(不受 offset/limit 影響)。用來判斷是否已查完整份批次列表、還要不要用下一個 offset 繼續翻頁。

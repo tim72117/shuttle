@@ -112,6 +112,7 @@ func (t *RecommendNearbyTool) Call(args types.ToolArguments, ctx types.ToolConte
 	summary := strings.TrimRight(sb.String(), "\n")
 
 	results := make([]map[string]interface{}, 0, len(nearby))
+	places := make([]RecommendedPlace, 0, len(nearby))
 	for _, p := range nearby {
 		results = append(results, map[string]interface{}{
 			"name":        p.Name,
@@ -120,6 +121,9 @@ func (t *RecommendNearbyTool) Call(args types.ToolArguments, ctx types.ToolConte
 			"lng":         p.Lng,
 			"primaryType": p.PrimaryType,
 		})
+		places = append(places, RecommendedPlace{
+			Name: p.Name, Address: p.Address, Lat: p.Lat, Lng: p.Lng, PrimaryType: p.PrimaryType,
+		})
 	}
 
 	ctx.EmitToolResult(map[string]interface{}{
@@ -127,8 +131,14 @@ func (t *RecommendNearbyTool) Call(args types.ToolArguments, ctx types.ToolConte
 		"origin":  map[string]interface{}{"name": origin.Name, "lat": origin.Lat, "lng": origin.Lng},
 		"results": results,
 	})
-	// 廣播給前端,讓對話下方即時顯示推薦景點卡片(見 sink.go NotifyRecommendedPlaces)。
-	NotifyRecommendedPlaces(ChannelFrom(ctx), results)
+	// recommend_nearby 與 present_entries 同屬 sync 型工具,都在同一次
+	// want_analyzer.Assist() 推論流程內執行(見 sink.go 的 RecordLock/RecordUnlock
+	// 生命週期)。故比照 present_entries 的 addPresented,把候選景點累積進本次
+	// 流程的結果,由 Assist() 結束後一併轉成 AssistResult.RecommendedPlaces
+	// 回傳給前端,掛在觸發它的那則訊息底下顯示——不再用異步 WS 廣播
+	// (原本的 NotifyRecommendedPlaces 只帶 channelID,無法對應到是哪一則訊息
+	// 觸發的,同一輪對話連續呼叫兩次還會互相覆蓋)。
+	addRecommendedPlaces(places)
 	return []types.ResultContentBlock{types.TextBlock(summary)}, nil
 }
 

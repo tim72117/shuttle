@@ -14,6 +14,7 @@ import type {
   APIErrorBody,
 } from './types'
 import { getAssistLang } from './assistLang'
+import type { TripEntry } from './clienttools/tripEntryTools'
 
 // 一筆 API 交易的完整紀錄,debug panel 與 console log 都靠它。
 export interface ApiCall {
@@ -282,20 +283,39 @@ export interface PresentedEntry {
   endTime: string
 }
 
+// recommend_nearby 工具查到、要展示給使用者的一筆候選景點。
+// 與後端 llm.AssistPlace/wanttools.RecommendedPlace 同形。
+export interface AssistPlace {
+  name: string
+  address: string
+  lat: number
+  lng: number
+  primaryType: string
+}
+
 // owner 統一輸入:LLM 自主判斷記錄事項或回答提問。
 // recorded:原話不存後端,回 text(原話,前端存進裝置端 DB)+ entryIDs(新寫入條目);
 //   前端據此重拉 entries 顯示,並把原話存入裝置 DB。
-// answer:回 answer + entries(present_entries 輸出,可空)。
+// answer:回 answer + entries(present_entries 輸出,可空)+ recommendedPlaces
+//   (recommend_nearby 輸出,可空)——兩者都掛在觸發它們的那則答案訊息底下顯示,
+//   而非全域彈出浮層(取代先前透過 WS recommended_places 事件的做法)。
 export type AssistResult =
   | { kind: 'recorded'; text: string; entryIDs: string[] }
-  | { kind: 'answer'; answer: string; entries: PresentedEntry[] }
+  | { kind: 'answer'; answer: string; entries: PresentedEntry[]; recommendedPlaces: AssistPlace[] }
 
-export function assist(cfg: ClientConfig, channelID: string, text: string) {
+// clientToolsSessionId:ChatScreen.tsx 另開的第二條 clienttools WS 連線
+// (/internal/clienttools/ws)收到 ack 後拿到的 sessionId,讓後端的
+// trip_entry_add/trip_entry_update 工具(取代 entry_add/entry_update,見
+// server/internal/llm/assistant_agent.go)能透過這個 id 找到同一條 WS 連線、
+// 把工具呼叫轉發回這個分頁執行(見 server/internal/clienttools/interaction.go)。
+// undefined(第二條連線尚未連上)時後端仍會照常處理其餘工具,只有
+// trip_entry_* 這幾個會失敗。
+export function assist(cfg: ClientConfig, channelID: string, text: string, clientToolsSessionId?: string) {
   return request<AssistResult>(
     cfg,
     'POST',
     `/v1/channels/${encodeURIComponent(channelID)}/assist`,
-    { text, lang: getAssistLang() },
+    { text, lang: getAssistLang(), clientToolsSessionId },
   )
 }
 
@@ -336,6 +356,50 @@ export function resetChannelData(cfg: ClientConfig, channelID: string) {
     cfg,
     'DELETE',
     `/v1/channels/${encodeURIComponent(channelID)}/entries`,
+  )
+}
+
+// ---- 旅程清單「儲存」按鈕專用的逐筆 upsert API(見 ChatScreen.tsx 的儲存邏輯)。
+// 對齊後端 server/internal/api/api.go 新增的 handleCreateTripEntry/
+// handleUpdateTripEntry/handleDeleteTripEntry,body/回應形狀直接沿用
+// TripEntry 的欄位命名(title/date/time/note),不像 updateEntry() 那樣需要
+// start/startTime 這種對齊 model.Entry 的命名轉換。
+
+// 新增一筆旅程清單項目(不含 id,由後端產生)。對齊 POST /v1/channels/{id}/entries。
+export function createTripEntry(
+  cfg: ClientConfig,
+  channelID: string,
+  input: Omit<TripEntry, 'id'>,
+) {
+  return request<TripEntry>(
+    cfg,
+    'POST',
+    `/v1/channels/${encodeURIComponent(channelID)}/entries`,
+    input,
+  )
+}
+
+// 修改既有一筆旅程清單項目。對齊 PUT /v1/channels/{id}/entries/{entryID}。
+export function updateTripEntry(
+  cfg: ClientConfig,
+  channelID: string,
+  entryID: string,
+  input: Omit<TripEntry, 'id'>,
+) {
+  return request<{ updated: string }>(
+    cfg,
+    'PUT',
+    `/v1/channels/${encodeURIComponent(channelID)}/entries/${encodeURIComponent(entryID)}`,
+    input,
+  )
+}
+
+// 刪除既有一筆旅程清單項目。對齊 DELETE /v1/channels/{id}/entries/{entryID}。
+export function deleteTripEntry(cfg: ClientConfig, channelID: string, entryID: string) {
+  return request<{ deleted: string }>(
+    cfg,
+    'DELETE',
+    `/v1/channels/${encodeURIComponent(channelID)}/entries/${encodeURIComponent(entryID)}`,
   )
 }
 

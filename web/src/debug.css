@@ -242,6 +242,26 @@
   color: #ffb454;
 }
 
+/* ---- 推薦景點橫向捲動列(RecommendedPlacesRow,RecommendedPlaces.tsx):
+   debug 限定的 UI 試做,比照 App Store/Netflix 橫向卡片列。復用 .recommended-place-card
+   本身樣式(styles.css),這裡只覆蓋外層排列方式(flex row + overflow-x 捲動)與
+   卡片固定寬度(避免被 flex 壓縮變形)。捲動軸用 scrollbar-width: thin 讓它不突兀,
+   同時保留滑鼠滾輪/觸控板/觸控手勢的原生橫向拖曳能力,不需要額外的 JS 或套件。 */
+.recommended-places-row {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  padding: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  width: 100%;
+}
+.recommended-places-row .recommended-place-card {
+  flex: 0 0 auto;
+  width: 240px;
+}
+
 /* ---- ClientToolsDemo:「LLM 呼叫前端 tool」試做(POC),見 ClientToolsDemo.tsx ---- */
 .cts-root {
   display: flex;
@@ -299,34 +319,45 @@
   font-size: 12px;
   padding: 12px 0;
 }
-.cts-entry {
+.cts-table {
+  width: 100%;
+  border-collapse: collapse;
   border: 1px solid #26262b;
   border-radius: 8px;
-  padding: 8px 10px;
-  background: #161619;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  overflow: hidden;
+  font-size: 12px;
 }
-.cts-entry-main {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+.cts-table th {
+  text-align: left;
+  padding: 6px 10px;
+  background: #202024;
+  color: #8a8a93;
+  font-size: 11px;
+  font-weight: 600;
+  border-bottom: 1px solid #26262b;
+  white-space: nowrap;
+}
+.cts-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #202024;
+  vertical-align: top;
+}
+.cts-entry-row {
+  background: #161619;
+}
+.cts-entry-row:last-child td {
+  border-bottom: none;
 }
 .cts-entry-title {
   color: #e8e8ea;
-  font-size: 13px;
   font-weight: 600;
 }
 .cts-entry-when {
   color: #6cb6ff;
-  font-size: 11px;
   white-space: nowrap;
 }
 .cts-entry-note {
   color: #a8a8b0;
-  font-size: 11.5px;
 }
 .cts-entry-id {
   color: #6a6a72;

@@ -4,11 +4,11 @@ import type { ApiCall, WsEvent } from './api'
 import { onApiCall, onWsEvent } from './api'
 import { useAppState, PhoneContent } from './App'
 import { DebugPanel } from './DebugPanel'
-import { RecommendedPlacesList, FAKE_RECOMMENDED_PLACES } from './RecommendedPlaces'
+import { RecommendedPlacesList, RecommendedPlacesRow, FAKE_RECOMMENDED_PLACES } from './RecommendedPlaces'
 import { RecommendedPlacesMap } from './RecommendedPlacesMap'
 import './debug.css'
 
-type DemoMode = 'app' | 'cards' | 'map'
+type DemoMode = 'app' | 'cards' | 'row' | 'map'
 
 // 推薦景點卡片 UI 試做:純假資料展示,不串接任何 API,只是讓主內容區
 // 換成 RecommendedPlacesList,方便直接在既有 debug 工作台看到卡片渲染效果。
@@ -23,6 +23,24 @@ function RecommendedPlacesDemo() {
       </div>
       <div className="screen-body">
         <RecommendedPlacesList places={FAKE_RECOMMENDED_PLACES} />
+      </div>
+    </>
+  )
+}
+
+// 推薦景點橫向捲動列 UI 試做:同樣純假資料展示,不串接任何 API,把主內容區換成
+// RecommendedPlacesRow(卡片橫向一行、可左右拉動瀏覽,比照 App Store/Netflix),
+// 復用 RecommendedPlaceCard 的單卡渲染邏輯,只是外層排列方式不同於 cards 模式的垂直清單。
+function RecommendedPlacesRowDemo() {
+  return (
+    <>
+      <div className="navbar">
+        <span style={{ width: 36 }} />
+        <span className="title">推薦景點橫滑(試做)</span>
+        <span style={{ width: 36 }} />
+      </div>
+      <div className="screen-body">
+        <RecommendedPlacesRow places={FAKE_RECOMMENDED_PLACES} />
       </div>
     </>
   )
@@ -110,6 +128,8 @@ export function DebugApp() {
       <div className="workbench-main web-app">
         {demoMode === 'cards' ? (
           <RecommendedPlacesDemo />
+        ) : demoMode === 'row' ? (
+          <RecommendedPlacesRowDemo />
         ) : demoMode === 'map' ? (
           <RecommendedPlacesMapDemo />
         ) : (
@@ -124,6 +144,13 @@ export function DebugApp() {
           title="切換推薦景點卡片 UI 試做(假資料)"
         >
           {demoMode === 'cards' ? '← 回到 App' : '推薦景點卡片試做'}
+        </button>
+        <button
+          className="btn-secondary"
+          onClick={() => setDemoMode((m) => (m === 'row' ? 'app' : 'row'))}
+          title="切換推薦景點橫向捲動 UI 試做(假資料)"
+        >
+          {demoMode === 'row' ? '← 回到 App' : '推薦景點橫滑試做'}
         </button>
         <button
           className="btn-secondary"

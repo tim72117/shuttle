@@ -2,15 +2,33 @@ package llm
 
 // ClientToolsAnalyzer is this POC's dedicated want wiring for the
 // "LLM calls a frontend tool" experiment (server/internal/clienttools +
-// web/src/DebugApp.tsx). It is deliberately independent of WantAnalyzer/
-// WantPool (want_analyzer.go/want_pool.go), which back the real assistant
-// conversation flow (server/internal/llm/assistant_agent.go's Tools
-// whitelist: entry_add, entry_query, ...): mixing this POC's
-// trip_entry_add/delete/update/list tools into that whitelist — or reusing
-// its shared orchestrator/mutex — would let a stray WS message from this
-// debug harness disturb real channel conversations, which the task this
-// file exists for explicitly calls out to avoid ("避免正式對話流程被這次
-// 試做污染").
+// web/src/DebugApp.tsx's debug workbench page). It is deliberately
+// independent of WantAnalyzer/WantPool (want_analyzer.go/want_pool.go) as an
+// *orchestrator* — they remain two separate *wantorch.Orchestrator instances,
+// each pinned to its own agent role (clienttoolsRole here vs "assistant" in
+// assistant_agent.go), so a stray WS message on this debug page's own
+// connection can never interleave with or disturb a real channel
+// conversation's in-flight inference turn (WantAnalyzer.mu still only
+// serializes calls through *that* orchestrator).
+//
+// UPDATE (assistant now also calls trip_entry_*): what's no longer true of
+// this doc comment's original claim is tool *registry* isolation —
+// assistant_agent.go's Tools whitelist now includes trip_entry_add/
+// trip_entry_update (replacing entry_add/entry_update, which wrote directly
+// to Postgres) alongside this POC's own clienttoolsRole whitelist. Both
+// roles resolve the same tools from want's one process-wide global tool
+// registry (types.RegisterTool — see clienttools/tool.go's RegisterApp,
+// which this constructor still calls). That's intentional and safe: which
+// *role* a given orchestrator's dispatch loop resolves per call still keeps
+// the two conversation flows' prompts/histories/inference turns apart (see
+// want's orchestrator.go Start()'s toolUseContext :=
+// internal.LoadToolUseContext(agentID, orch.Role, ...)); only the tool
+// *declarations* are now shared, not the orchestrators, sessions, or
+// mutexes. See want_analyzer.go's Assist for how the assistant flow's HTTP
+// request/response turn threads its own sessionID (from the browser's
+// separate /internal/clienttools/ws connection — see ChatScreen.tsx) through
+// SetSessionEnvs so trip_entry_* tools reach the right WS session
+// regardless of which role invoked them.
 //
 // A second *wantorch.Orchestrator instance (not a second call to
 // wantorch.SetupWith/orchestrator.Setup) is what actually keeps these

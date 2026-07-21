@@ -128,6 +128,11 @@ func (s *Server) handlePublicAssist(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Text string `json:"text"`
 		Lang string `json:"lang,omitempty"`
+		// ClientToolsSessionID:同 handleAssist(api.go)——公開頁目前尚未接
+		// 第二條 clienttools WS 連線,通常留空;trip_entry_* 工具在留空時
+		// 會直接失敗,不影響其餘工具。保留欄位是為了與 AssistForSession
+		// 的統一簽章對齊,萬一日後公開頁也要接上可直接沿用。
+		ClientToolsSessionID string `json:"clientToolsSessionId,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Text == "" {
 		writeErr(w, http.StatusBadRequest, "invalid_body", "text 必填")
@@ -140,6 +145,6 @@ func (s *Server) handlePublicAssist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Lang 為使用者設定的 LLM 回答語言偏好("zh-TW"/"en"),空字串由下游視為預設(繁體中文)。
-	res := assistant.AssistForSession("public:"+token, info.ChannelID, "", body.Text, body.Lang, nil)
+	res := assistant.AssistForSession("public:"+token, info.ChannelID, "", body.Text, body.Lang, body.ClientToolsSessionID, nil)
 	writeJSON(w, http.StatusOK, res)
 }
