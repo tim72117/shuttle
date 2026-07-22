@@ -2473,3 +2473,400 @@ pre {
   font-size: 12px;
   color: var(--ios-gray);
 }
+
+/* ==== 以下搬自原 debug.css(?debug 獨立工作台已移除,見 App.tsx 的
+   ?demo 附加面板/導覽項目)。這幾組樣式本身不是「debug 限定」,是
+   DebugPanel.tsx / ClientToolsDemo.tsx / RecommendedPlacesRow(demo-row)
+   這幾個元件實際需要的樣式,搬進正式全域樣式表繼續生效。 ==== */
+
+/* ---- DebugPanel(API/WS 狀態面板,見 App.tsx 的 showDebugPanel 附加面板) ---- */
+.debug {
+  flex: 0 0 auto;
+  min-width: 0;
+  background: #0d0d0f;
+  color: #d4d4d8;
+  border-radius: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.debug-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #26262b;
+  color: #fff;
+}
+.debug-head .h-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.debug-head button {
+  background: #26262b;
+  color: #d4d4d8;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.debug-list {
+  overflow-y: auto;
+  padding: 8px;
+}
+
+/* Debug panel 分頁切換 */
+.debug-tabs {
+  display: flex;
+  gap: 4px;
+}
+.debug-tabs button {
+  background: transparent;
+  color: #8a8a93;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.debug-tabs button.active {
+  background: #2a2a2e;
+  color: #fff;
+}
+
+/* Entries 列表 */
+.entries-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #8a8a93;
+  font-size: 12px;
+  padding: 4px 6px 8px;
+}
+.entries-head button {
+  background: #2a2a2e;
+  color: #ddd;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.entries-head button.danger {
+  background: #4a1f1f;
+  color: #ff9e9e;
+}
+.entries-head button.danger:hover {
+  background: #5f2626;
+}
+.entry-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #2a2a2e;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.entry-when-mono {
+  color: #6cb6ff;
+}
+.entry-item-mono {
+  color: #e8e8ea;
+}
+.entry-id-mono {
+  color: #6a6a72;
+  font-size: 10px;
+}
+.call {
+  border: 1px solid #26262b;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.call-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  background: #161619;
+}
+.call-head:hover {
+  background: #1d1d22;
+}
+.method {
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.method.GET {
+  background: #1f3a5f;
+  color: #8ec5ff;
+}
+.method.POST {
+  background: #1f4d2e;
+  color: #8ff0a4;
+}
+.method.DELETE {
+  background: #5f1f1f;
+  color: #ff9e9e;
+}
+.method.OPTIONS {
+  background: #4a4a1f;
+  color: #f0e98f;
+}
+.call-path {
+  flex: 1;
+  color: #c9c9d0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.status {
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.status.ok {
+  background: #1f4d2e;
+  color: #8ff0a4;
+}
+.status.err {
+  background: #5f1f1f;
+  color: #ff9e9e;
+}
+.status.fail {
+  background: #3a3a3a;
+  color: #ffb454;
+}
+.dur {
+  color: #6e6e78;
+  font-size: 11px;
+}
+.call-body {
+  padding: 10px;
+  border-top: 1px solid #26262b;
+  background: #0d0d0f;
+}
+.kv-label {
+  color: #6e6e78;
+  margin: 8px 0 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.kv-label:first-child {
+  margin-top: 0;
+}
+.json-err {
+  color: #ffb454;
+}
+
+/* ---- 推薦景點橫向捲動列(RecommendedPlacesRow,見 RecommendedPlaces.tsx,
+   ?demo 模式的 demo-row):比照 App Store/Netflix 橫向卡片列。復用
+   .recommended-place-card 本身樣式,這裡只覆蓋外層排列方式(flex row +
+   overflow-x 捲動)與卡片固定寬度(避免被 flex 壓縮變形)。捲動軸用
+   scrollbar-width: thin 讓它不突兀,同時保留滑鼠滾輪/觸控板/觸控手勢的
+   原生橫向拖曳能力,不需要額外的 JS 或套件。 */
+.recommended-places-row {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  padding: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  width: 100%;
+}
+.recommended-places-row .recommended-place-card {
+  flex: 0 0 auto;
+  width: 240px;
+}
+
+/* ---- ClientToolsDemo:「LLM 呼叫前端 tool」試做(POC),見
+   clienttools/ClientToolsDemo.tsx,?demo 模式的 demo-clienttools ---- */
+.cts-root {
+  display: flex;
+  height: 100%;
+  color: #d4d4d8;
+  font-family: var(--mono);
+  background: #1c1c1e;
+}
+.cts-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+  overflow-y: auto;
+}
+.cts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cts-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+.cts-status {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #2a2a2e;
+  color: #8a8a93;
+}
+.cts-status-open {
+  background: #1f4d2e;
+  color: #8ff0a4;
+}
+.cts-status-connecting {
+  background: #4a4a1f;
+  color: #f0e98f;
+}
+.cts-status-closed {
+  background: #5f1f1f;
+  color: #ff9e9e;
+}
+.cts-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 80px;
+}
+.cts-empty {
+  color: #6e6e78;
+  font-size: 12px;
+  padding: 12px 0;
+}
+.cts-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #26262b;
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 12px;
+}
+.cts-table th {
+  text-align: left;
+  padding: 6px 10px;
+  background: #202024;
+  color: #8a8a93;
+  font-size: 11px;
+  font-weight: 600;
+  border-bottom: 1px solid #26262b;
+  white-space: nowrap;
+}
+.cts-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #202024;
+  vertical-align: top;
+}
+.cts-entry-row {
+  background: #161619;
+}
+.cts-entry-row:last-child td {
+  border-bottom: none;
+}
+.cts-entry-title {
+  color: #e8e8ea;
+  font-weight: 600;
+}
+.cts-entry-when {
+  color: #6cb6ff;
+  white-space: nowrap;
+}
+.cts-entry-note {
+  color: #a8a8b0;
+}
+.cts-entry-id {
+  color: #6a6a72;
+  font-size: 10px;
+}
+.cts-assistant {
+  border: 1px solid #2a3a2e;
+  background: #14201a;
+  color: #b8e8c8;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+}
+.cts-inputrow {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+.cts-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: #0d0d0f;
+  border: 1px solid #26262b;
+  color: #d4d4d8;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.cts-input:disabled {
+  opacity: 0.6;
+}
+.cts-log {
+  flex: 0 0 340px;
+  min-width: 0;
+  border-left: 1px solid #26262b;
+  background: #0d0d0f;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cts-log-title {
+  padding: 12px 14px;
+  border-bottom: 1px solid #26262b;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+}
+.cts-log-list {
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cts-log-entry {
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 11px;
+  border: 1px solid #26262b;
+}
+.cts-log-out {
+  background: #161c26;
+}
+.cts-log-in {
+  background: #161619;
+}
+.cts-log-dir {
+  color: #6cb6ff;
+  font-weight: 700;
+}
+.cts-log-summary {
+  color: #d4d4d8;
+  word-break: break-word;
+}
+.cts-log-detail {
+  color: #8a8a93;
+  margin-top: 3px;
+  word-break: break-all;
+  max-height: 80px;
+  overflow-y: auto;
+}

@@ -15,7 +15,7 @@ import {
 } from './deviceDB'
 import { ErrorBanner, errMsg, isSubmitEnter } from './App'
 import { MultiTrackTimeline, type TaskPlaceholder } from './Timeline'
-import { ClientToolsBridge } from './clienttools/ClientToolsBridge'
+import { ClientToolsBridge } from './clienttools/bridge/ClientToolsBridge'
 import { defaultClientTools } from './clienttools/tools'
 import type { TripBatches, TripEntry } from './clienttools/tripEntryTools'
 import { MembersScreen } from './channel/MembersScreen'

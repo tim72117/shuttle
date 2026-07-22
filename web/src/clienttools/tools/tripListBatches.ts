@@ -1,6 +1,27 @@
-import type { ClientTool } from '../ClientToolsBridge'
+import type { ClientTool } from '../../sdk-proposals/arrayTools'
 import { defineTool } from '../../sdk-proposals/defineTool'
 import { asNonNegativeInt, type TripBatches } from '../tripEntryTools'
+
+// TripListBatchesCtx — 這個工具實際用到的 context 子集,只有 getAllBatches
+// 一個口子(純讀取工具,不改動 allBatches,故不需要 setAllBatches;也不是
+// 給 LLM 用的清單查詢通知對象,故不需要 notifyBatchQueried——那是
+// tripEntryList 才需要的口子,見 ClientToolsBridge.ts 的 ToolContext 型別
+// 說明)。刻意不 import 完整的 ToolContext——這個檔案除了 defineTool/
+// ClientTool 這兩個 sdk-proposals 的通用型別以外,不依賴 ClientToolsBridge.ts
+// 的任何具體型別,理論上可以整份搬到任何提供「getAllBatches 這一個口子」的
+// bridge 底下用。
+//
+// 這能成立是靠 TypeScript 的結構化型別 + 函式參數逆變:handle 宣告成只需要
+// TripListBatchesCtx(較窄的需求),之後仍能被放進要求 ClientTool<ToolContext>
+// 的陣列(tools/index.ts 的 defaultClientTools,元素型別是
+// ClientToolsBridge.ts 的 BridgeTool = ClientTool<ToolContext>),因為真正
+// 呼叫時傳進來的 ToolContext 物件本身就同時滿足這個較窄的需求(多出來的
+// setAllBatches/notifyBatchQueried 欄位單純被忽略)——「需要的比較少」的
+// 函式,可以放到「會給的比較多」的地方用,這正是介面隔離原則(Interface
+// Segregation)的型別層體現。
+type TripListBatchesCtx = {
+  getAllBatches: () => TripBatches
+}
 
 // BatchSummary — 一個批次的摘要,形狀對齊 server/tools/clienttools.yaml
 // 裡 trip_list_batches 的 returns 定義(key/count/firstDate/lastDate/
@@ -73,7 +94,7 @@ function parseTripListBatchesArgs(raw: unknown): TripListBatchesArgs {
 // tripListBatches — trip_list_batches 工具宣告,用 defineTool 包裝(見
 // sdk-proposals/defineTool.ts 的設計說明)。純讀取、不改動 allBatches,所以
 // 不需要呼叫 ctx.setAllBatches。
-export const tripListBatches: ClientTool = defineTool<TripListBatchesArgs>(
+export const tripListBatches: ClientTool<TripListBatchesCtx> = defineTool(
   'trip_list_batches',
   parseTripListBatchesArgs,
   (args, ctx) => {

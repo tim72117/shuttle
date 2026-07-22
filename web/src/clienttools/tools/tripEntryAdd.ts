@@ -1,6 +1,27 @@
-import type { ClientTool } from '../ClientToolsBridge'
+import type { ClientTool } from '../../sdk-proposals/arrayTools'
 import { defineTool } from '../../sdk-proposals/defineTool'
 import { asString, type TripBatches, type TripEntry } from '../tripEntryTools'
+
+// TripEntryAddCtx — 這個工具實際用到的 context 子集,只有 getAllBatches/
+// setAllBatches 兩個口子(不用 notifyBatchQueried,那是 tripEntryList 才需要
+// 的通知口子,見 ClientToolsBridge.ts 的 ToolContext 型別說明)。刻意不 import
+// 完整的 ToolContext——這個檔案除了 defineTool/ClientTool 這兩個
+// sdk-proposals 的通用型別以外,不依賴 ClientToolsBridge.ts 的任何具體型別,
+// 理論上可以整份搬到任何提供「getAllBatches/setAllBatches 這兩個口子」的
+// bridge 底下用。
+//
+// 這能成立是靠 TypeScript 的結構化型別 + 函式參數逆變:handle 宣告成只需要
+// TripEntryAddCtx(較窄的需求),之後仍能被放進要求 ClientTool<ToolContext>
+// 的陣列(tools/index.ts 的 defaultClientTools,元素型別是
+// ClientToolsBridge.ts 的 BridgeTool = ClientTool<ToolContext>),因為真正
+// 呼叫時傳進來的 ToolContext 物件本身就同時滿足這個較窄的需求(多出來的
+// notifyBatchQueried 欄位單純被忽略)——「需要的比較少」的函式,可以放到
+// 「會給的比較多」的地方用,這正是介面隔離原則(Interface Segregation)的
+// 型別層體現。
+type TripEntryAddCtx = {
+  getAllBatches: () => TripBatches
+  setAllBatches: (next: TripBatches) => void
+}
 
 // newTripEntryId：核心用途是 trip_entry_add 產生新 id,因此邏輯搬進來跟工具
 // 宣告放在同一個檔案;但 export 出去是因為 ClientToolsDemo.tsx 建立初始
@@ -70,7 +91,13 @@ function parseTripEntryAddArgs(raw: unknown): TripEntryAddArgs {
 // (args.key 是 string,不用再 asString(args.key)),轉型只在 parseTripEntryAddArgs
 // 這一處集中處理。這裡只負責接線:透過 ctx 讀當下 allBatches、把純函式
 // addTripEntry 回傳的新 allBatches 寫回 ctx、回傳 result 給 bridge 送回 LLM。
-export const tripEntryAdd: ClientTool = defineTool<TripEntryAddArgs>(
+//
+// 回傳型別標注成 sdk-proposals 的 ClientTool<TripEntryAddCtx>(而非
+// ClientToolsBridge.ts 的 BridgeTool),讓 Args/Ctx 兩個泛型參數都從這裡
+// 反推——這是這個檔案唯一需要知道「ctx 長怎樣」的地方,其餘程式碼(handle
+// 內部)完全不需要額外型別標注就拿到型別安全的
+// ctx.getAllBatches/ctx.setAllBatches。
+export const tripEntryAdd: ClientTool<TripEntryAddCtx> = defineTool(
   'trip_entry_add',
   parseTripEntryAddArgs,
   (args, ctx) => {

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { isSubmitEnter } from '../App'
-import { type TripBatches } from './tripEntryTools'
+import { isSubmitEnter } from '../../App'
+import { type TripBatches } from '../tripEntryTools'
 import { ClientToolsBridge, type ConnStatus, type LogEntry } from './ClientToolsBridge'
-import { defaultClientTools } from './tools'
-import { newTripEntryId } from './tools/tripEntryAdd'
+import { defaultClientTools } from '../tools'
+import { newTripEntryId } from '../tools/tripEntryAdd'
 
 // ClientToolsDemo — 「LLM 呼叫前端 tool」試做(POC)的畫面渲染。
 //

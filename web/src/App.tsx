@@ -3,11 +3,11 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import {
   ChevronLeft, ChevronDown, Check,
   Send, AlertCircle, Plus, LogIn, X, Settings, LogOut,
-  List, Calendar, Sparkles, GalleryHorizontal, Map, Navigation,
+  List, Calendar, Sparkles, GalleryHorizontal, Map, Navigation, Wrench, Radio, Activity,
 } from 'lucide-react'
-import type { ClientConfig } from './api'
+import type { ClientConfig, ApiCall, WsEvent } from './api'
 import * as api from './api'
-import { ApiError } from './api'
+import { ApiError, onApiCall, onWsEvent } from './api'
 import type { Channel, Entry, User } from './types'
 import { LandingPage } from './LandingPage'
 import { ChatScreen } from './ChatScreen'
@@ -17,6 +17,9 @@ import type { AssistLang } from './assistLang'
 import { ASSIST_LANG_KEY, getAssistLang } from './assistLang'
 import { RecommendedPlacesList, RecommendedPlacesRow, FAKE_RECOMMENDED_PLACES } from './RecommendedPlaces'
 import { RecommendedPlacesMap } from './RecommendedPlacesMap'
+import { ClientToolsDemo } from './clienttools/bridge/ClientToolsDemo'
+import { OnagentBridgeDemo } from './clienttools/OnagentBridgeDemo'
+import { DebugPanel } from './DebugPanel'
 
 // baseURL 由建置時的 VITE_API_BASE 決定(見 .env.development),不開放使用者於 UI 修改;
 // 未設時退回目前頁面 origin(production 前後端同源部署)。
@@ -207,9 +210,17 @@ export function PhoneContent(props: ContentProps) {
 
 // PanelMode:side panel 目前顯示的內容;null 代表收合(主區全寬)。
 // 'demo-cards'/'demo-row'/'demo-map':試做用的推薦景點呈現方式(假資料,見
-// RecommendedPlaces.tsx/RecommendedPlacesMap.tsx),只有網址帶 ?demo 時 rail 上
-// 才會出現對應按鈕(見 DesktopRail),與正式的 channels/timeline 分開命名以便一眼區分。
-type PanelMode = 'channels' | 'timeline' | 'demo-cards' | 'demo-row' | 'demo-map' | null
+// RecommendedPlaces.tsx/RecommendedPlacesMap.tsx)。'demo-clienttools'/
+// 'demo-onagent':「LLM 呼叫前端 tool」試做的兩條資料流(前者走 tripace 自己的
+// ClientToolsBridge/clienttools_ws.go,後者走 onagent 平台,見
+// clienttools/ClientToolsDemo.tsx / OnagentBridgeDemo.tsx 的說明),原本只能
+// 從獨立的 ?debug 工作台(DebugApp.tsx)進入,現在併入這裡統一用 ?demo 存取。
+// 只有網址帶 ?demo 時 rail 上才會出現對應按鈕(見 DesktopRail),與正式的
+// channels/timeline 分開命名以便一眼區分。
+type PanelMode =
+  | 'channels' | 'timeline'
+  | 'demo-cards' | 'demo-row' | 'demo-map' | 'demo-clienttools' | 'demo-onagent'
+  | null
 
 // 時間軸鏡像資料的初始值(尚未收到 ChatScreen 鏡像前,或未選擇行程時使用)。
 const EMPTY_TIMELINE_MIRROR: DesktopTimelineMirror = {
@@ -240,6 +251,18 @@ function DesktopContent(props: ContentProps) {
   // side panel 的 MultiTrackTimeline,不可以自己另外 fetch 或開第二條 WS。
   const [timelineMirror, setTimelineMirror] = useState<DesktopTimelineMirror>(EMPTY_TIMELINE_MIRROR)
   const todayRef = useRef<HTMLDivElement>(null as unknown as HTMLDivElement)
+
+  // showDebugPanel/calls/wsEvents:原本 DebugApp.tsx(?debug 獨立工作台)裡的
+  // API/WS 狀態面板,併入正式 App 後改成只在 ?demo 模式下、由 rail 上一顆
+  // 獨立按鈕切換顯示的附加面板(不佔用 panelMode 的三態切換,因為它要能疊加
+  // 顯示、不取代 side panel 或 .desktop-main 的內容——見下方渲染邏輯)。
+  // onApiCall/onWsEvent 訂閱本身沒有開銷(見 api.ts),即使面板收合也持續
+  // 累積,收合後重新展開不會漏掉收合期間發生的紀錄。
+  const [showDebugPanel, setShowDebugPanel] = useState(false)
+  const [debugCalls, setDebugCalls] = useState<ApiCall[]>([])
+  const [debugWsEvents, setDebugWsEvents] = useState<WsEvent[]>([])
+  useEffect(() => onApiCall((c) => setDebugCalls((prev) => [c, ...prev].slice(0, 100))), [])
+  useEffect(() => onWsEvent((e) => setDebugWsEvents((prev) => [e, ...prev].slice(0, 100))), [])
   // isSidepanelMode:panelMode 是不是「該展開 side panel」的模式——只有
   // channels/timeline 這兩種正式功能會用到 side panel;demo-cards/demo-row/
   // demo-map 這三種試做模式改成顯示在右側 .desktop-main(取代 ChatScreen,
@@ -281,6 +304,8 @@ function DesktopContent(props: ContentProps) {
           onLogout={props.onLogout}
           onOpenSettings={() => setSettingsOpen(true)}
           isDemo={!!props.isDemo}
+          showDebugPanel={showDebugPanel}
+          onToggleDebugPanel={() => setShowDebugPanel((v) => !v)}
         />
         <aside className={`desktop-sidepanel${isSidepanelMode ? '' : ' collapsed'}${panelMode === 'timeline' ? ' wide' : ''}`}>
           <div className="desktop-sidepanel-inner">
@@ -344,6 +369,10 @@ function DesktopContent(props: ContentProps) {
                 <RecommendedPlacesMap places={FAKE_RECOMMENDED_PLACES} />
               </div>
             </div>
+          ) : panelMode === 'demo-clienttools' ? (
+            <ClientToolsDemo />
+          ) : panelMode === 'demo-onagent' ? (
+            <OnagentBridgeDemo />
           ) : activeChannel ? (
             <ChatScreen
               cfg={cfg}
@@ -356,6 +385,22 @@ function DesktopContent(props: ContentProps) {
             <div className="desktop-empty-state">選擇一個行程開始</div>
           )}
         </main>
+        {props.isDemo && showDebugPanel && (
+          <DebugPanel
+            calls={debugCalls}
+            onClear={() => setDebugCalls([])}
+            wsEvents={debugWsEvents}
+            onClearWsEvents={() => setDebugWsEvents([])}
+            cfg={cfg}
+            channel={activeChannel}
+            // .debug 這組樣式(見 debug.css)原本假設父層是撐滿整頁的
+            // .workbench,寫死 height: 100vh。這裡改成 .desktop-layout
+            // 這個非全頁的 flex row 底下的一個子項,覆寫成吃滿容器高度
+            // (100%)、固定寬度(不像 .debug 原本的 flex: 0 0 auto 那樣
+            // 依內容決定寬度)。
+            style={{ flex: '0 0 360px', height: '100%' }}
+          />
+        )}
       </div>
       {settingsOpen && (
         <SettingsDialog
@@ -384,6 +429,8 @@ function DesktopRail({
   onLogout,
   onOpenSettings,
   isDemo,
+  showDebugPanel,
+  onToggleDebugPanel,
 }: {
   panelMode: PanelMode
   onSelect: (mode: Exclude<PanelMode, null>) => void
@@ -394,10 +441,16 @@ function DesktopRail({
   onAuthed: (token: string, user: User, email: string) => void
   onLogout: () => void
   onOpenSettings: () => void
-  // isDemo:網址帶 ?demo 時為 true,才會多渲染下方三顆試做用按鈕
-  // (推薦景點卡片/橫滑/地圖,見 RecommendedPlaces.tsx/RecommendedPlacesMap.tsx)。
-  // 沒帶 ?demo 時 rail 維持現狀,不多出任何項目。
+  // isDemo:網址帶 ?demo 時為 true,才會多渲染下方幾顆試做用按鈕
+  // (推薦景點卡片/橫滑/地圖、ClientToolsBridge/onagent 串接試做、API/WS
+  // 狀態面板開關)。沒帶 ?demo 時 rail 維持現狀,不多出任何項目。
   isDemo: boolean
+  // showDebugPanel/onToggleDebugPanel:API/WS 狀態面板(原 DebugApp.tsx 的
+  // DebugPanel)的開關狀態——獨立於 panelMode 之外的一個 boolean,不是三態
+  // 切換的一員,因為這個面板是疊加顯示、不取代 side panel 或 .desktop-main
+  // 的內容(見 DesktopContent 渲染邏輯裡 showDebugPanel 的用法)。
+  showDebugPanel: boolean
+  onToggleDebugPanel: () => void
 }) {
   return (
     <nav className="desktop-rail">
@@ -442,6 +495,27 @@ function DesktopRail({
               title="推薦景點地圖(試做)"
             >
               <Map size={20} strokeWidth={1.8} />
+            </button>
+            <button
+              className={`desktop-rail-btn desktop-rail-btn-demo${panelMode === 'demo-clienttools' ? ' active' : ''}`}
+              onClick={() => onSelect('demo-clienttools')}
+              title="LLM 呼叫前端 tool 試做(ClientToolsBridge)"
+            >
+              <Wrench size={20} strokeWidth={1.8} />
+            </button>
+            <button
+              className={`desktop-rail-btn desktop-rail-btn-demo${panelMode === 'demo-onagent' ? ' active' : ''}`}
+              onClick={() => onSelect('demo-onagent')}
+              title="onagent 平台串接試做"
+            >
+              <Radio size={20} strokeWidth={1.8} />
+            </button>
+            <button
+              className={`desktop-rail-btn desktop-rail-btn-demo${showDebugPanel ? ' active' : ''}`}
+              onClick={onToggleDebugPanel}
+              title="API / WS 狀態面板"
+            >
+              <Activity size={20} strokeWidth={1.8} />
             </button>
           </>
         )}

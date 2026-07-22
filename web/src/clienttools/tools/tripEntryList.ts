@@ -1,6 +1,27 @@
-import type { ClientTool } from '../ClientToolsBridge'
+import type { ClientTool } from '../../sdk-proposals/arrayTools'
 import { defineTool } from '../../sdk-proposals/defineTool'
 import { asNonNegativeInt, asString, type TripBatches, type TripEntry } from '../tripEntryTools'
+
+// TripEntryListCtx — 這個工具實際用到的 context 子集,只有 getAllBatches/
+// notifyBatchQueried 兩個口子。不含 setAllBatches——這是純讀取工具,不改動
+// allBatches,不需要寫回的口子;它需要的是另一個平行、獨立的通知口子
+// notifyBatchQueried,主動回報「這個 key 剛被查詢過」(見 ClientToolsBridge.ts
+// 的 ToolContext 型別說明)。刻意不 import 完整的 ToolContext——這個檔案除了
+// defineTool/ClientTool 這兩個 sdk-proposals 的通用型別以外,不依賴
+// ClientToolsBridge.ts 的任何具體型別,理論上可以整份搬到任何提供
+// 「getAllBatches/notifyBatchQueried 這兩個口子」的 bridge 底下用。
+//
+// 這能成立同樣是靠 TypeScript 的結構化型別 + 函式參數逆變(見
+// tripEntryAdd.ts 的 TripEntryAddCtx 說明):handle 宣告成只需要
+// TripEntryListCtx(較窄的需求),之後仍能被放進要求 ClientTool<ToolContext>
+// 的陣列(tools/index.ts 的 defaultClientTools,元素型別是
+// ClientToolsBridge.ts 的 BridgeTool = ClientTool<ToolContext>),因為真正
+// 呼叫時傳進來的 ToolContext 物件本身就同時滿足這個較窄的需求(多出來的
+// setAllBatches 欄位單純被忽略)。
+type TripEntryListCtx = {
+  getAllBatches: () => TripBatches
+  notifyBatchQueried: (key: string) => void
+}
 
 // listTripEntries：分頁查詢某一批(key)的純邏輯,不改動 allBatches,純讀取,
 // 不含 React 依賴。key 對應的批次不存在時視為空清單(total=0、entries=[]）
@@ -51,7 +72,7 @@ function parseTripEntryListArgs(raw: unknown): TripEntryListArgs {
 // 對純讀取工具永遠偵測不到變化,故改用 ctx.notifyBatchQueried 這個平行、獨立
 // 的通知口子主動回報(見 ClientToolsBridge.ts ToolContext 型別定義處的完整
 // 說明)。
-export const tripEntryList: ClientTool = defineTool<TripEntryListArgs>(
+export const tripEntryList: ClientTool<TripEntryListCtx> = defineTool(
   'trip_entry_list',
   parseTripEntryListArgs,
   (args, ctx) => {

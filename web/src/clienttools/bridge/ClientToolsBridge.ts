@@ -1,5 +1,6 @@
-import { BASE_URL } from '../App'
-import type { TripBatches } from './tripEntryTools'
+import { BASE_URL } from '../../App'
+import type { TripBatches } from '../tripEntryTools'
+import { toToolRecord, type ClientTool, type ClientToolHandler } from '../../sdk-proposals/arrayTools'
 
 // ClientToolsBridge — 「LLM 呼叫前端 tool」試做(POC)的連線與協定邏輯,從
 // ClientToolsDemo.tsx 拆出來,不含任何 React 依賴(不 import React、不用
@@ -68,7 +69,6 @@ type ErrorPayload = {
 // trip_entry_add/trip_entry_list 是 query 型,回傳值會真的被送回 LLM 的推論
 // context;trip_entry_delete/trip_entry_update 是 action 型,回傳值只用來判斷
 // 「有沒有成功」,LLM 看不到實際內容。
-type ToolHandler = (args: Record<string, unknown>) => unknown
 
 // ToolContext — bridge 傳給每個工具的「有限權限接口」,而不是把整個 bridge
 // 實例交出去。工具只能透過這裡明確開放的讀寫口子操作 allBatches 狀態,不會
@@ -103,15 +103,25 @@ export type ToolContext = {
   notifyBatchQueried: (key: string) => void
 }
 
-// ClientTool — 一個工具的完整宣告:name 對應 server/tools/clienttools.yaml
-// 裡的 tool name,handle 是實際執行邏輯,簽章比照上面的 ToolHandler,但多收
-// 一個 ctx 參數(見 ToolContext)。工具檔案(見 ./tools/ 目錄)各自 export
-// 一個 ClientTool 常數,由主程式的 import 清單決定要餵給 bridge 哪些工具——
-// bridge 本身不再寫死認得任何具體工具。
-export type ClientTool = {
-  name: string
-  handle: (args: Record<string, unknown>, ctx: ToolContext) => unknown
-}
+// BridgeTool — 一個工具的完整宣告:name 對應 server/tools/clienttools.yaml
+// 裡的 tool name,handle 是實際執行邏輯,多收一個 ctx 參數(見 ToolContext)。
+// 工具檔案(見 ./tools/ 目錄)各自 export 一個 BridgeTool 常數,由主程式的
+// import 清單決定要餵給 bridge 哪些工具——bridge 本身不再寫死認得任何具體
+// 工具。
+//
+// 型別上是 sdk-proposals/arrayTools.ts 的 ClientTool<Ctx> 代入這個專案自己
+// 的 ToolContext 後的具體實例化,不是原生獨立宣告——ClientTool<Ctx> 是
+// 「工具需不需要 context、context 長怎樣」這件事的通用表達(Ctx 預設 void,
+// 對齊 SDK 原生 ToolHandler 完全不帶 context 的簽章),BridgeTool 只是把
+// Ctx 固定代入 ToolContext,名字特意跟 sdk-proposals 的泛型型別區分開來
+// (BridgeTool = 這個專案的 ClientToolsBridge 專屬、已具體化的版本;
+// ClientTool<Ctx> = sdk-proposals 那邊給任意消費者用的通用提案型別)。這樣
+// sdk-proposals 底下的檔案(defineTool.ts/toAgentBridgeTools.ts/
+// arrayTools.ts 本身)完全不需要知道 ToolContext 長怎樣、甚至不需要 import
+// 這個檔案,任何只想用 sdk-proposals、不碰 ClientToolsBridge.ts 的新元件都
+// 能獨立成立——依賴方向是 BridgeTool 這邊引用 sdk-proposals 的通用型別再
+// 具體化,不是反過來讓 sdk-proposals 向這裡借用型別。
+export type BridgeTool = ClientTool<ToolContext>
 
 // newLogId：不能用簡單的遞增計數器——原本在 React.StrictMode 下,開發模式會
 // mount → cleanup → 再次 mount 同一個元件以偵測 effect 是否具備冪等性,若前
@@ -196,19 +206,23 @@ export class ClientToolsBridge {
   private ws: WebSocket | null = null
   private closedByDisconnect = false
 
-  private handlers: Record<string, ToolHandler>
+  private ctx: ToolContext
+  private handlers: Record<string, ClientToolHandler<ToolContext>>
 
-  // constructor 收一個 ClientTool 陣列(見上面型別定義),由呼叫端(例如
+  // constructor 收一個 BridgeTool 陣列(見上面型別定義),由呼叫端(例如
   // ClientToolsDemo.tsx)決定要餵給這個 bridge 哪些工具——bridge 本身不再
   // dependent 認得任何具體工具,新增一個工具不需要碰這個檔案,只要新建工具檔案
   // 並加進呼叫端的陣列。這裡把 tools 陣列轉成用 name 當 key 的 Record,存進
-  // this.handlers 給 connect() 裡的 WS message handler 查表用;查表本身沿用
-  // 原本的 ToolHandler 簽章 (args) => unknown,呼叫點會額外傳入 ctx(見
-  // connect() 內的 tool.handle(payload.args, ctx))。
+  // this.handlers 給 connect() 裡的 WS message handler 查表用。
   //
-  // 同一批 tools 若有重複的 name,視為設定錯誤,直接丟出 Error 讓開發者馬上
-  // 發現,不要讓後面的悄悄覆蓋前面的(那樣會讓某個工具的呼叫默默失聯,很難
-  // debug)。
+  // 「陣列轉 Record + 查重複就 throw」這段邏輯直接呼叫 sdk-proposals/
+  // arrayTools.ts 的 toToolRecord,不再自己手寫一次同樣的迴圈——那本來就是
+  // toToolRecord 存在的目的(見該函式的說明),這裡手寫一份是跟 sdk-proposals
+  // 重複的邏輯,故直接複用。差異只在於 ctx 的綁定時機:toToolRecord 產出的
+  // handler 維持兩個參數的形狀(args, ctx) => unknown(不像先前手動 curry
+  // 成一個參數的寫法),ctx 改存成 this.ctx 這個私有欄位,呼叫時機延後到
+  // connect() 的 WS message handler 真正查表執行時才一併傳入(見下方
+  // handler(payload.args ?? {}, this.ctx))。
   //
   // getAllBatches/setAllBatches:bridge 不再自己持有 allBatches 的私有副本
   // (先前的設計是 bridge 內部存一份、透過 onEntriesChange 回呼通知外部——
@@ -221,26 +235,20 @@ export class ClientToolsBridge {
   // 寫回去,不再自己快取。setAllBatches 內部呼叫端負責同時更新 ref 與觸發
   // React re-render(見 ChatScreen.tsx 建立 bridge 時傳入的實作)。
   constructor(
-    tools: ClientTool[],
+    tools: BridgeTool[],
     callbacks: ClientToolsBridgeCallbacks,
     getAllBatches: () => TripBatches,
     setAllBatches: (next: TripBatches) => void,
   ) {
     this.callbacks = callbacks
 
-    const ctx: ToolContext = {
+    this.ctx = {
       getAllBatches,
       setAllBatches,
       notifyBatchQueried: (key) => this.callbacks.onBatchQueried?.(key),
     }
 
-    this.handlers = {}
-    for (const tool of tools) {
-      if (Object.prototype.hasOwnProperty.call(this.handlers, tool.name)) {
-        throw new Error(`ClientToolsBridge: duplicate tool name "${tool.name}"`)
-      }
-      this.handlers[tool.name] = (args) => tool.handle(args, ctx)
-    }
+    this.handlers = toToolRecord(tools)
   }
 
   private setStatus(next: ConnStatus) {
@@ -361,7 +369,7 @@ export class ClientToolsBridge {
           }
 
           try {
-            const result = handler(payload.args ?? {})
+            const result = handler(payload.args ?? {}, this.ctx)
             this.pushLog('out', `tool_result: ${payload.toolName} ok`, JSON.stringify(result))
             this.send({
               type: 'tool_result',

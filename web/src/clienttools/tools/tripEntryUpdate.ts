@@ -1,6 +1,21 @@
-import type { ClientTool } from '../ClientToolsBridge'
+import type { ClientTool } from '../../sdk-proposals/arrayTools'
 import { defineTool } from '../../sdk-proposals/defineTool'
 import { asString, type TripBatches } from '../tripEntryTools'
+
+// TripEntryUpdateCtx — 這個工具實際用到的 context 子集,只有 getAllBatches/
+// setAllBatches 兩個口子(不用 notifyBatchQueried,那是 tripEntryList 才需要
+// 的通知口子,見 ClientToolsBridge.ts 的 ToolContext 型別說明)。刻意不 import
+// 完整的 ToolContext,理由與 tripEntryAdd.ts 的 TripEntryAddCtx 完全相同:
+// 這個檔案除了 defineTool/ClientTool 這兩個 sdk-proposals 的通用型別以外,
+// 不依賴 ClientToolsBridge.ts 的任何具體型別;之所以仍能被放進要求
+// ClientTool<ToolContext>(即 BridgeTool)的陣列(tools/index.ts 的
+// defaultClientTools),是靠 TypeScript 結構化型別 + 函式參數逆變——真正
+// 呼叫時傳進來的 ToolContext 物件本身就同時滿足這個較窄的需求(多出來的
+// notifyBatchQueried 欄位單純被忽略)。
+type TripEntryUpdateCtx = {
+  getAllBatches: () => TripBatches
+  setAllBatches: (next: TripBatches) => void
+}
 
 // updateTripEntry：修改一筆旅程 entry 的純邏輯,不含 React 依賴。找不到對應
 // key/id 判斷的注意事項同 tripEntryDelete.ts 的 deleteTripEntry(呼叫端必須
@@ -63,7 +78,7 @@ function parseTripEntryUpdateArgs(raw: unknown): TripEntryUpdateArgs {
 // tripEntryUpdate — trip_entry_update 工具宣告,用 defineTool 包裝(見
 // sdk-proposals/defineTool.ts 的設計說明)。找不到對應 key/id 時
 // updateTripEntry 會 throw,交給 bridge 統一轉成 tool_result 的 error 回應。
-export const tripEntryUpdate: ClientTool = defineTool<TripEntryUpdateArgs>(
+export const tripEntryUpdate: ClientTool<TripEntryUpdateCtx> = defineTool(
   'trip_entry_update',
   parseTripEntryUpdateArgs,
   (args, ctx) => {
